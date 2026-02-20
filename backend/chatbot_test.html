@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fitness Chatbot Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .chat-container { border: 1px solid #ddd; padding: 20px; border-radius: 10px; }
+        .question { background: #f0f0f0; padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .answer { background: #e8f5e8; padding: 10px; margin: 10px 0; border-radius: 5px; }
+        input { width: 70%; padding: 10px; }
+        button { padding: 10px 20px; background: #007bff; color: white; border: none; cursor: pointer; }
+        button:hover { background: #0056b3; }
+    </style>
+</head>
+<body>
+    <h1>🏋️ Fitness Chatbot Test</h1>
+    <div class="chat-container">
+        <div id="chat"></div>
+        <div style="margin-top: 20px;">
+            <input type="text" id="questionInput" placeholder="Ask about fitness, nutrition, exercises..." />
+            <button onclick="askQuestion()">Ask</button>
+        </div>
+    </div>
+
+    <script>
+        async function askQuestion() {
+            const input = document.getElementById('questionInput');
+            const question = input.value.trim();
+            
+            if (!question) return;
+            
+            const chatDiv = document.getElementById('chat');
+            
+            // Add question to chat
+            const questionDiv = document.createElement('div');
+            questionDiv.className = 'question';
+            questionDiv.innerHTML = `<strong>You:</strong> ${question}`;
+            chatDiv.appendChild(questionDiv);
+            
+            try {
+                const response = await fetch('http://localhost:8000/chat/public-ask', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ question: question })
+                });
+                
+                const result = await response.json();
+                
+                // Add answer to chat
+                const answerDiv = document.createElement('div');
+                answerDiv.className = 'answer';
+                answerDiv.innerHTML = `<strong>Bot:</strong> ${result.answer}`;
+                chatDiv.appendChild(answerDiv);
+                
+            } catch (error) {
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'answer';
+                errorDiv.innerHTML = `<strong>Error:</strong> ${error.message}`;
+                chatDiv.appendChild(errorDiv);
+            }
+            
+            // Clear input
+            input.value = '';
+            
+            // Scroll to bottom
+            chatDiv.scrollTop = chatDiv.scrollHeight;
+        }
+        
+        // Test some predefined questions
+        window.onload = function() {
+            const testQuestions = [
+                'protein rich foods',
+                'suggest healthy foods', 
+                'tell me about squats',
+                'how many calories in chai'
+            ];
+            
+            const chatDiv = document.getElementById('chat');
+            chatDiv.innerHTML = '<h3>Predefined Tests:</h3>';
+            
+            testQuestions.forEach(async (q) => {
+                try {
+                    const response = await fetch('http://localhost:8000/chat/public-ask', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ question: q })
+                    });
+                    
+                    const result = await response.json();
+                    
+                    const qDiv = document.createElement('div');
+                    qDiv.className = 'question';
+                    qDiv.innerHTML = `<strong>Test:</strong> ${q}`;
+                    chatDiv.appendChild(qDiv);
+                    
+                    const aDiv = document.createElement('div');
+                    aDiv.className = 'answer';
+                    aDiv.innerHTML = `<strong>Bot:</strong> ${result.answer.substring(0, 150)}...`;
+                    chatDiv.appendChild(aDiv);
+                    
+                } catch (error) {
+                    const eDiv = document.createElement('div');
+                    eDiv.className = 'answer';
+                    eDiv.innerHTML = `<strong>Error for ${q}:</strong> ${error.message}`;
+                    chatDiv.appendChild(eDiv);
+                }
+            });
+        };
+        
+        // Allow Enter key to submit
+        document.getElementById('questionInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                askQuestion();
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+age,weight_kg,height_cm,bmi,gender,activity_level,goal,diet_type,health_conditions,diet_recommendation
+25,70,175,22.9,male,moderate,weight_loss,vegetarian,none,Focus on high-protein foods, include vegetables, avoid sugary drinks
+30,80,180,24.7,female,high,muscle_gain,non_vegetarian,diabetes,Include lean proteins, complex carbs, monitor blood sugar levels
+35,65,165,23.9,male,low,maintain,vegetarian,hypertension,Reduce sodium intake, include potassium-rich foods, maintain balanced diet
+28,75,170,25.9,female,moderate,weight_loss,vegan,none,Focus on plant-based proteins, whole grains, healthy fats
+40,85,175,27.8,male,high,muscle_gain,non_vegetarian,none,High-calorie diet with proteins, carbs, healthy fats for muscle building
+22,60,160,23.4,female,low,maintain,vegetarian,thyroid,Include iodine-rich foods, balanced macronutrients
+45,90,180,27.8,male,moderate,weight_loss,non_vegetarian,cholesterol,Low-fat diet, include fiber-rich foods, omega-3 sources
+32,68,168,24.1,female,high,muscle_gain,vegetarian,none,Protein-rich vegetarian foods, complex carbs, calorie surplus
+38,72,172,24.3,male,low,maintain,vegan,none,Balanced vegan diet with all essential nutrients
+26,78,178,24.6,female,moderate,weight_loss,non_vegetarian,pcos,Low-glycemic foods, anti-inflammatory diet, balanced hormones

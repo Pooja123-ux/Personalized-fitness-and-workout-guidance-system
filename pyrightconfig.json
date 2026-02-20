@@ -1,0 +1,19 @@
+{
+  "pythonVersion": "3.13",
+  "pythonPath": "${workspaceRoot}",
+  "typeCheckingMode": "basic",
+  "include": [
+    "${workspaceRoot}/backend",
+    "${workspaceRoot}/app",
+    "${workspaceRoot}/test_*.py"
+  ],
+  "exclude": [
+    "${workspaceRoot}/**/node_modules",
+    "${workspaceRoot}/**/__pycache__",
+    "${workspaceRoot}/frontend"
+  ],
+  "extraPaths": [
+    "${workspaceRoot}/backend",
+    "${workspaceRoot}"
+  ]
+}
