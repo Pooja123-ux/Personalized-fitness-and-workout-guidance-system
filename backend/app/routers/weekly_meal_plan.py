@@ -115,6 +115,132 @@ def generate_meal_item(food_name: str, food_data: Dict) -> MealItem:
         difficulty="easy"
     )
 
+def select_foods_for_target(food_list, target_calories):
+    """Select foods from a list to match target calories as closely as possible"""
+    
+    selected_foods = []
+    current_calories = 0
+    
+    # Convert food list to MealItem objects
+    meal_items = []
+    for food in food_list:
+        meal_items.append(MealItem(
+            name=food['name'], calories=food['calories'], protein=food['protein'],
+            carbs=food['carbs'], fats=food['fat'], preparation_time=20, difficulty="medium"
+        ))
+    
+    # Sort by calorie density (moderate calories first for balance)
+    meal_items.sort(key=lambda x: abs(x.calories - target_calories/2))
+    
+    # Select foods to get close to target
+    for item in meal_items:
+        if current_calories >= target_calories:
+            break
+        selected_foods.append(item)
+        current_calories += item.calories
+    
+    # If we're still short, add more items
+    if current_calories < target_calories * 0.8:
+        for item in meal_items:
+            if item not in selected_foods and current_calories < target_calories:
+                selected_foods.append(item)
+                current_calories += item.calories
+    
+    return selected_foods
+
+def adjust_calories_to_target(breakfast_foods, lunch_foods, snack_foods, dinner_foods,
+                            target_calories, target_protein, current_calories, current_protein, 
+                            current_carbs, current_fats):
+    """Adjust meal portions to meet target calories and protein"""
+    
+    calorie_diff = target_calories - current_calories
+    protein_diff = target_protein - current_protein
+    
+    print(f"DEBUG: Calorie difference: {calorie_diff}")
+    
+    # If we need to add calories
+    if calorie_diff > 50:
+        # Add multiple high-calorie foods to meet the target
+        additional_foods = []
+        remaining_calories = calorie_diff
+        
+        while remaining_calories > 100:
+            if remaining_calories > 400:
+                # Add a substantial meal item
+                additional_foods.append(MealItem(
+                    name="Rice and Dal", calories=350, protein=12, carbs=60, fats=8,
+                    preparation_time=25, difficulty="medium"
+                ))
+                remaining_calories -= 350
+            elif remaining_calories > 200:
+                # Add a moderate meal item
+                additional_foods.append(MealItem(
+                    name="Chicken Curry", calories=280, protein=25, carbs=15, fats=12,
+                    preparation_time=30, difficulty="medium"
+                ))
+                remaining_calories -= 280
+            elif remaining_calories > 100:
+                # Add a snack
+                additional_foods.append(MealItem(
+                    name="Mixed Nuts", calories=180, protein=6, carbs=8, fats=15,
+                    preparation_time=5, difficulty="easy"
+                ))
+                remaining_calories -= 180
+            else:
+                # Add a small snack
+                additional_foods.append(MealItem(
+                    name="Banana", calories=105, protein=1.3, carbs=27, fats=0.4,
+                    preparation_time=2, difficulty="easy"
+                ))
+                remaining_calories -= 105
+        
+        # Distribute additional foods across meals
+        for i, food in enumerate(additional_foods):
+            if i % 4 == 0:
+                breakfast_foods.append(food)
+            elif i % 4 == 1:
+                lunch_foods.append(food)
+            elif i % 4 == 2:
+                snack_foods.append(food)
+            else:
+                dinner_foods.append(food)
+        
+        print(f"DEBUG: Added {len(additional_foods)} additional foods")
+    
+    # If we need to reduce calories (remove some high-calorie items)
+    elif calorie_diff < -50:
+        # Find and remove some high-calorie items
+        all_meals = breakfast_foods + lunch_foods + snack_foods + dinner_foods
+        
+        # Sort by calories (highest first)
+        sorted_meals = sorted(all_meals, key=lambda x: x.calories, reverse=True)
+        
+        # Remove items until we're close to target
+        calories_to_remove = abs(calorie_diff)
+        for meal in sorted_meals:
+            if calories_to_remove <= 0:
+                break
+            if meal.calories > 150:  # Only remove higher calorie items
+                if meal in breakfast_foods:
+                    breakfast_foods.remove(meal)
+                elif meal in lunch_foods:
+                    lunch_foods.remove(meal)
+                elif meal in snack_foods:
+                    snack_foods.remove(meal)
+                elif meal in dinner_foods:
+                    dinner_foods.remove(meal)
+                calories_to_remove -= meal.calories
+    
+    # Recalculate totals
+    all_meals = breakfast_foods + lunch_foods + snack_foods + dinner_foods
+    new_total_calories = sum(item.calories for item in all_meals)
+    new_total_protein = sum(item.protein for item in all_meals)
+    new_total_carbs = sum(item.carbs for item in all_meals)
+    new_total_fats = sum(item.fats for item in all_meals)
+    
+    print(f"DEBUG: Final calories after adjustment: {new_total_calories}")
+    return new_total_calories, new_total_protein, new_total_carbs, new_total_fats
+
 def generate_daily_meals(target_calories: int, target_protein: float, 
                         diet_type: str, diseases: List[str], allergies: List[str], 
                         day_index: int = 0, personalized_recommendations: List = None) -> DailyMealPlan:
@@ -154,7 +280,7 @@ def generate_daily_meals(target_calories: int, target_protein: float,
         snack_foods = []
         dinner_foods = []
         
-        # Distribute personalized recommendations across meal types based on day
+        # Distribute personalized recommendations across meal types based on day and calorie targets
         for i, meal in enumerate(diet_recommendations):
             meal_item = MealItem(
                 name=meal.get("food_name", "Unknown Food"),
@@ -166,18 +292,40 @@ def generate_daily_meals(target_calories: int, target_protein: float,
                 difficulty="medium"
             )
             
-            # Distribute recommendations across days and meal types
-            # Use day_index and meal index to create variety
+            # Calculate target calories per meal
+            breakfast_target = int(target_calories * 0.25)
+            lunch_target = int(target_calories * 0.35)
+            snack_target = int(target_calories * 0.10)
+            dinner_target = int(target_calories * 0.30)
+            
+            # Calculate current calories in each meal
+            breakfast_current = sum(item.calories for item in breakfast_foods)
+            lunch_current = sum(item.calories for item in lunch_foods)
+            snack_current = sum(item.calories for item in snack_foods)
+            dinner_current = sum(item.calories for item in dinner_foods)
+            
+            # Distribute based on which meal needs more calories
             meal_distribution = (day_index + i) % 4
             
-            if meal_distribution == 0:
+            # Smart distribution based on calorie needs
+            if breakfast_current < breakfast_target * 0.8 and meal_distribution == 0:
                 breakfast_foods.append(meal_item)
-            elif meal_distribution == 1:
+            elif lunch_current < lunch_target * 0.8 and meal_distribution == 1:
                 lunch_foods.append(meal_item)
-            elif meal_distribution == 2:
+            elif snack_current < snack_target * 0.8 and meal_distribution == 2:
                 snack_foods.append(meal_item)
-            else:
+            elif dinner_current < dinner_target * 0.8:
                 dinner_foods.append(meal_item)
+            else:
+                # Fallback to standard distribution
+                if meal_distribution == 0:
+                    breakfast_foods.append(meal_item)
+                elif meal_distribution == 1:
+                    lunch_foods.append(meal_item)
+                elif meal_distribution == 2:
+                    snack_foods.append(meal_item)
+                else:
+                    dinner_foods.append(meal_item)
         
         # If we have personalized recommendations but need more variety, supplement with Indian foods
         if diet_recommendations and (len(breakfast_foods) < 2 or len(lunch_foods) < 2 or len(dinner_foods) < 2):
@@ -216,29 +364,17 @@ def generate_daily_meals(target_calories: int, target_protein: float,
         if not diet_recommendations:
             indian_foods = get_indian_food_variety(day_index, diet_type)
             
-            for food in indian_foods['breakfast']:
-                breakfast_foods.append(MealItem(
-                    name=food['name'], calories=food['calories'], protein=food['protein'],
-                    carbs=food['carbs'], fats=food['fat'], preparation_time=20, difficulty="medium"
-                ))
+            # Calculate target calories per meal
+            breakfast_target = int(target_calories * 0.25)  # 25% for breakfast
+            lunch_target = int(target_calories * 0.35)     # 35% for lunch
+            snack_target = int(target_calories * 0.10)     # 10% for snacks
+            dinner_target = int(target_calories * 0.30)    # 30% for dinner
             
-            for food in indian_foods['lunch']:
-                lunch_foods.append(MealItem(
-                    name=food['name'], calories=food['calories'], protein=food['protein'],
-                    carbs=food['carbs'], fats=food['fat'], preparation_time=25, difficulty="medium"
-                ))
-            
-            for food in indian_foods['snacks']:
-                snack_foods.append(MealItem(
-                    name=food['name'], calories=food['calories'], protein=food['protein'],
-                    carbs=food['carbs'], fats=food['fat'], preparation_time=10, difficulty="easy"
-                ))
-            
-            for food in indian_foods['dinner']:
-                dinner_foods.append(MealItem(
-                    name=food['name'], calories=food['calories'], protein=food['protein'],
-                    carbs=food['carbs'], fats=food['fat'], preparation_time=30, difficulty="medium"
-                ))
+            # Select foods to match meal targets
+            breakfast_foods = select_foods_for_target(indian_foods['breakfast'], breakfast_target)
+            lunch_foods = select_foods_for_target(indian_foods['lunch'], lunch_target)
+            snack_foods = select_foods_for_target(indian_foods['snacks'], snack_target)
+            dinner_foods = select_foods_for_target(indian_foods['dinner'], dinner_target)
         
         # Filter foods based on diet type
         if diet_type.lower() == 'vegetarian':
@@ -277,6 +413,21 @@ def generate_daily_meals(target_calories: int, target_protein: float,
     total_protein = sum(item.protein for item in all_meals)
     total_carbs = sum(item.carbs for item in all_meals)
     total_fats = sum(item.fats for item in all_meals)
+    
+    # Debug logging
+    print(f"DEBUG: Target calories: {target_calories}, Current calories: {total_calories}")
+    print(f"DEBUG: Meal counts - Breakfast: {len(breakfast_foods)}, Lunch: {len(lunch_foods)}, Snacks: {len(snack_foods)}, Dinner: {len(dinner_foods)}")
+    
+    # Adjust calories to meet target if needed
+    if abs(total_calories - target_calories) > 100:  # If off by more than 100 calories
+        print(f"DEBUG: Adjusting calories - difference: {target_calories - total_calories}")
+        total_calories, total_protein, total_carbs, total_fats = adjust_calories_to_target(
+            breakfast_foods, lunch_foods, snack_foods, dinner_foods,
+            target_calories, target_protein, total_calories, total_protein, total_carbs, total_fats
+        )
+        print(f"DEBUG: After adjustment - calories: {total_calories}")
+    else:
+        print(f"DEBUG: No adjustment needed - calories are within range")
     
     return DailyMealPlan(
         day="",

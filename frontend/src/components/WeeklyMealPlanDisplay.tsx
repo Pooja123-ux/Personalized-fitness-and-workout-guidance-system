@@ -43,11 +43,115 @@ interface WeeklyMealPlan {
   last_updated: string;
 }
 
+interface NutritionTip {
+  icon: string;
+  title: string;
+  description: string;
+  category: 'preparation' | 'nutrition' | 'timing' | 'storage';
+}
+
 const WeeklyMealPlanDisplay: React.FC = () => {
   const [weeklyPlan, setWeeklyPlan] = useState<WeeklyMealPlan | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [showTips, setShowTips] = useState(true)
+  const [activeCategory, setActiveCategory] = useState<'all' | 'preparation' | 'nutrition' | 'timing' | 'storage'>('all')
+  const [helpfulTips, setHelpfulTips] = useState<Set<number>>(new Set())
+  const [filteredTips, setFilteredTips] = useState<NutritionTip[]>([])
   const [error, setError] = useState<string | null>(null);
   const [selectedDay, setSelectedDay] = useState<string>('Monday');
+  const [nutritionTips, setNutritionTips] = useState<NutritionTip[]>([]);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  // Get category icon and label
+  function getCategoryIcon(category: string): string {
+    const icons = {
+      preparation: '👨‍🍳',
+      nutrition: '🌿',
+      timing: '⏰',
+      storage: '🧊'
+    }
+    return icons[category as keyof typeof icons] || '💡'
+  }
+
+  function getCategoryLabel(category: string): string {
+    const labels = {
+      preparation: 'Preparation',
+      nutrition: 'Nutrition',
+      timing: 'Timing',
+      storage: 'Storage'
+    }
+    return labels[category as keyof typeof labels] || 'Tips'
+  }
+
+  function getActiveCategory(category: string): string {
+    return activeCategory === category ? category : ''
+  }
+
+  // Mark tip as helpful
+  function markTipHelpful(tipIndex: number) {
+    setHelpfulTips(prev => new Set(prev).add(tipIndex))
+  }
+
+  // Share tip
+  function shareTip(tip: NutritionTip) {
+    if (navigator.share) {
+      navigator.share({
+        title: tip.title,
+        text: tip.description,
+        url: window.location.href
+      }).catch(err => console.log('Share failed:', err))
+    } else {
+      // Fallback: copy to clipboard
+      navigator.clipboard.writeText(`${tip.title}: ${tip.description}`)
+      setFeedback('Tip copied to clipboard!')
+    }
+  }
+
+  // Generate shopping list
+  function generateShoppingList() {
+    if (!weeklyPlan) return
+
+    const allItems: string[] = []
+    Object.values(weeklyPlan.meals).forEach(dayPlan => {
+      ['breakfast', 'lunch', 'snacks', 'dinner'].forEach(mealType => {
+        const items = dayPlan[mealType as keyof typeof dayPlan] as MealItem[]
+        items.forEach(item => {
+          allItems.push(item.name)
+        })
+      })
+    })
+
+    // Remove duplicates
+    const uniqueItems = [...new Set(allItems)]
+
+    // Create shopping list text
+    const shoppingList = uniqueItems.map((item, index) => `${index + 1}. ${item}`).join('\n')
+
+    // Download as text file
+    const blob = new Blob([shoppingList], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'shopping-list.txt'
+    a.click()
+    URL.revokeObjectURL(url)
+
+    setFeedback('🛒 Shopping list generated!')
+  }
+
+  // Filter tips by category
+  useEffect(() => {
+    if (activeCategory === 'all') {
+      setFilteredTips(nutritionTips)
+    } else {
+      setFilteredTips(nutritionTips.filter(tip => tip.category === activeCategory))
+    }
+  }, [activeCategory, nutritionTips])
+
+  const getNutritionTips = (): NutritionTip[] => {
+    // TO DO: implement getNutritionTips function
+    return []
+  }
 
   useEffect(() => {
     fetchWeeklyMealPlan();
@@ -239,84 +343,167 @@ const WeeklyMealPlanDisplay: React.FC = () => {
           ))}
         </div>
 
-        <div className="daily-summary">
-          <h2>{selectedDay}</h2>
-          <div style={{ fontSize: '24px', fontWeight: 'bold', margin: '10px 0' }}>
-            {currentDayPlan.total_calories} calories
+        <div className="content-grid">
+          <div className="main-content">
+            <div className="daily-summary">
+              <h2 style={{ margin: '0 0 15px 0', color: 'white' }}>{selectedDay}</h2>
+              <div style={{ fontSize: '32px', fontWeight: 'bold', margin: '10px 0' }}>
+                {currentDayPlan.total_calories} calories
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', marginTop: '10px' }}>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '18px', fontWeight: '600', color: 'blue' }}>
+                    {currentDayPlan.total_protein.toFixed(1)}g
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.8)' }}>Protein</div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '18px', fontWeight: '600' }}>{currentDayPlan.total_carbs.toFixed(1)}g</div>
+                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.8)' }}>Carbs</div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '18px', fontWeight: '600' }}>{currentDayPlan.total_fats.toFixed(1)}g</div>
+                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.8)' }}>Fats</div>
+                </div>
+              </div>
+              <div style={{ marginTop: '15px', padding: '10px', background: 'rgba(255,255,255,0.1)', borderRadius: '8px' }}>
+                <div style={{ fontSize: '14px', fontWeight: '500' }}>
+                  📊 Daily Macros: {((currentDayPlan.total_protein * 4) + (currentDayPlan.total_carbs * 4) + (currentDayPlan.total_fats * 9)).toFixed(0)} kcal
+                </div>
+              </div>
+            </div>
+
+            {(['breakfast', 'lunch', 'snacks', 'dinner'] as const).map((mealType) => {
+              const mealIcons = {
+                breakfast: '🌅',
+                lunch: '🥗',
+                snacks: '🍿',
+                dinner: '🍽️'
+              };
+              
+              const mealTitles = {
+                breakfast: 'Breakfast',
+                lunch: 'Lunch', 
+                snacks: 'Snacks',
+                dinner: 'Dinner'
+              };
+
+              const mealItems = currentDayPlan[mealType] as MealItem[];
+
+              return (
+                <div key={mealType} className="meal-section">
+                  <div className="meal-title">
+                    <span>{mealIcons[mealType]}</span>
+                    {mealTitles[mealType]}
+                    <div style={{ 
+                      fontSize: '12px', 
+                      fontWeight: 'normal', 
+                      color: 'rgba(255,255,255,0.7)',
+                      marginLeft: '8px',
+                      background: 'rgba(255,255,255,0.1)',
+                      padding: '2px 6px',
+                      borderRadius: '4px'
+                    }}>
+                      {mealItems.length} items
+                    </div>
+                  </div>
+                  {mealItems.map((item: MealItem, index: number) => (
+                    <div key={index} className="meal-item">
+                      <div className="meal-info">
+                        <div className="meal-name">{item.name}</div>
+                        <div className="meal-meta">
+                          <div className="prep-time">
+                            ⏱️ {item.preparation_time}min
+                          </div>
+                          <div className="difficulty">
+                            {item.difficulty === 'easy' ? '🟢 Easy' : 
+                             item.difficulty === 'medium' ? '🟡 Medium' : '🔴 Hard'}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="meal-stats">
+                        <div className="stat-item calories">
+                          <span>{item.calories}</span>
+                          <span>cal</span>
+                        </div>
+                        <div className="stat-item protein">
+                          <span>{item.protein}g</span>
+                        </div>
+                        <div className="stat-item carbs">
+                          <span>{item.carbs}g</span>
+                        </div>
+                        <div className="stat-item fats">
+                          <span>{item.fats}g</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
           </div>
-          <div>
-            Protein: {currentDayPlan.total_protein.toFixed(1)}g | 
-            Carbs: {currentDayPlan.total_carbs.toFixed(1)}g | 
-            Fats: {currentDayPlan.total_fats.toFixed(1)}g
+
+          <div className="tips-section">
+            <div className="tips-header">
+              <h3 className="tips-title">💡 Professional Nutrition Tips</h3>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <button 
+                  className={`toggle-tips ${showTips ? 'active' : ''}`}
+                  onClick={() => setShowTips(!showTips)}
+                >
+                  {showTips ? '📖 Hide Tips' : '💡 Show Tips'}
+                </button>
+                <div className="tip-categories">
+                  {['preparation', 'nutrition', 'timing', 'storage'].map((category) => (
+                    <button
+                      key={category}
+                      className={`category-btn ${getActiveCategory(category)}`}
+                      onClick={() => setActiveCategory(category as 'all' | 'preparation' | 'nutrition' | 'timing' | 'storage')}
+                    >
+                      {getCategoryIcon(category)} {getCategoryLabel(category)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            
+            {showTips && (
+              <div className="tips-grid">
+                {filteredTips.map((tip, index) => (
+                  <div key={index} className={`tip-card ${getActiveCategory(tip.category)}`} style={{
+                    animation: `slideIn 0.3s ease-out ${index * 0.1}s both`,
+                    animationFillMode: 'both'
+                  }}>
+                    <div className="tip-header">
+                      <div className="tip-icon">{tip.icon}</div>
+                      <div className="tip-category">{getCategoryLabel(tip.category)}</div>
+                    </div>
+                    <div className="tip-title">{tip.title}</div>
+                    <div className="tip-description">{tip.description}</div>
+                    <div className="tip-actions">
+                      <button className="tip-action-btn" onClick={() => markTipHelpful(index)}>
+                        👍 Helpful
+                      </button>
+                      <button className="tip-action-btn" onClick={() => shareTip(tip)}>
+                        📤 Share
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="meal-section">
-          <div className="meal-title">🌅 Breakfast</div>
-          {currentDayPlan.breakfast.map((item, index) => (
-            <div key={index} className="meal-item">
-              <div className="meal-name">{item.name}</div>
-              <div className="meal-stats">
-                <span className="calories">{item.calories} cal</span>
-                <span className="protein">P:{item.protein}g</span>
-                <span className="carbs">C:{item.carbs}g</span>
-                <span className="fats">F:{item.fats}g</span>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div className="meal-section">
-          <div className="meal-title">🥗 Lunch</div>
-          {currentDayPlan.lunch.map((item, index) => (
-            <div key={index} className="meal-item">
-              <div className="meal-name">{item.name}</div>
-              <div className="meal-stats">
-                <span className="calories">{item.calories} cal</span>
-                <span className="protein">P:{item.protein}g</span>
-                <span className="carbs">C:{item.carbs}g</span>
-                <span className="fats">F:{item.fats}g</span>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div className="meal-section">
-          <div className="meal-title">🍿 Snacks</div>
-          {currentDayPlan.snacks.map((item, index) => (
-            <div key={index} className="meal-item">
-              <div className="meal-name">{item.name}</div>
-              <div className="meal-stats">
-                <span className="calories">{item.calories} cal</span>
-                <span className="protein">P:{item.protein}g</span>
-                <span className="carbs">C:{item.carbs}g</span>
-                <span className="fats">F:{item.fats}g</span>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div className="meal-section">
-          <div className="meal-title">🍽️ Dinner</div>
-          {currentDayPlan.dinner.map((item, index) => (
-            <div key={index} className="meal-item">
-              <div className="meal-name">{item.name}</div>
-              <div className="meal-stats">
-                <span className="calories">{item.calories} cal</span>
-                <span className="protein">P:{item.protein}g</span>
-                <span className="carbs">C:{item.carbs}g</span>
-                <span className="fats">F:{item.fats}g</span>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div style={{ textAlign: 'center', marginTop: '30px' }}>
-          <button className="refresh-button" onClick={refreshMealPlan}>
+        <div className="action-buttons">
+          <button className="action-button primary" onClick={refreshMealPlan}>
             🔄 Refresh Meal Plan
           </button>
-          <button className="refresh-button" onClick={fetchWeeklyMealPlan}>
+          <button className="action-button secondary" onClick={fetchWeeklyMealPlan}>
             📊 Reload Data
+          </button>
+          <button className="action-button tertiary" onClick={generateShoppingList}>
+            🛒 Shopping List
           </button>
         </div>
       </div>
