@@ -33,6 +33,15 @@ function Trainer() {
   const [instructions, setInstructions] = useState<string[]>([])
   const [poseHints, setPoseHints] = useState<any>(null)
   const [exerciseMetadata, setExerciseMetadata] = useState<any>(null)
+  const poseStableFrames = useRef(0)
+  const lastAnglesRef = useRef<Record<string, number>>({})
+  const isPoseStableRef = useRef(false)
+  const lastVoiceTime = useRef(0)
+  const noPoseFrames = useRef(0)
+  const lastLandmarksRef = useRef<any | null>(null)
+  const [instructionIndex, setInstructionIndex] = useState(0)
+  const instructionsContainerRef = useRef<HTMLDivElement | null>(null)
+  const maxSpreadRef = useRef(0)
   
   const localGifAliases: Record<string, string> = {
       '3/4 sit-up': '34-sit-up',
@@ -68,6 +77,12 @@ function Trainer() {
         console.log('Setting instructions:', list)
         setInstructions(list)
         setExerciseMetadata(res.data)
+
+        // Immediately speak first instruction to confirm voice feedback is working
+        if (list.length > 0) {
+          setFeedback(list[0])
+          speak(list[0], 'high')
+        }
         
         // Load pose hints
         try {
@@ -125,12 +140,23 @@ function Trainer() {
   const voiceQueue = useRef<string[]>([])
   const isSpeaking = useRef(false)
   
-  function speak(text: string) {
+  function speak(text: string, priority: 'low' | 'medium' | 'high' = 'medium') {
     console.log('=== SPEAK FUNCTION CALLED ===')
     console.log('Text to speak:', text)
     
     if (!text || !text.trim()) {
       console.log('Empty speech text, skipping')
+      return
+    }
+
+    // Rate limiting for voice feedback to avoid spam
+    const now = Date.now()
+    if (priority === 'low' && now - lastVoiceTime.current < 3000) {
+      console.log('Skipping low priority voice due to rate limit')
+      return
+    }
+    if (priority === 'medium' && now - lastVoiceTime.current < 1500) {
+      console.log('Skipping medium priority voice due to rate limit')
       return
     }
     
@@ -153,6 +179,7 @@ function Trainer() {
     console.log('Starting speech synthesis...')
     isSpeaking.current = true
     const synth = window.speechSynthesis
+    lastVoiceTime.current = now
     
     // Get available voices
     const voices = synth.getVoices()
@@ -469,15 +496,72 @@ function Trainer() {
     img.src = gifSrc
   }, [gifSrc, exerciseName])
 
+  // Auto-advance instructions and scroll them dynamically while exercising
+  useEffect(() => {
+    if (!instructions.length) return
+    setInstructionIndex(0)
+    const interval = setInterval(() => {
+      setInstructionIndex((prev) => (prev + 1) % instructions.length)
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [instructions])
+
+  useEffect(() => {
+    if (!instructions.length) return
+    if (!instructionsContainerRef.current) return
+    const container = instructionsContainerRef.current
+    const items = container.querySelectorAll('.instruction-slide')
+    const active = items[instructionIndex] as HTMLElement | undefined
+    if (active) {
+      const top = active.offsetTop - container.offsetTop
+      container.scrollTo({ top, behavior: 'smooth' })
+    }
+  }, [instructionIndex, instructions])
+
+  function detectPoseStability(newAngles: Record<string, number>): boolean {
+    const threshold = 10 // degrees tolerance
+    const requiredStableFrames = 1 // frames of stability (more responsive)
+
+    if (Object.keys(lastAnglesRef.current).length === 0) {
+      lastAnglesRef.current = newAngles
+      poseStableFrames.current = 1
+      isPoseStableRef.current = false
+      return false
+    }
+
+    let stable = true
+    for (const [joint, angle] of Object.entries(newAngles)) {
+      const last = lastAnglesRef.current[joint]
+      if (last !== undefined && Math.abs(angle - last) > threshold) {
+        stable = false
+        break
+      }
+    }
+
+    poseStableFrames.current = stable ? poseStableFrames.current + 1 : 0
+    isPoseStableRef.current = poseStableFrames.current >= requiredStableFrames
+    lastAnglesRef.current = newAngles
+    return isPoseStableRef.current
+  }
+
   // Enhanced pose matching with real-time feedback
   function analyzeForm(results: Results) {
     console.log('=== ANALYZE FORM CALLED ===')
-    const lm = results.poseLandmarks
+    const currentLm = results.poseLandmarks
+    let lm = currentLm || lastLandmarksRef.current
+
     if (!lm) {
       console.log('No pose landmarks detected')
-      setFeedback('⚠️ No pose detected - position yourself in view')
+      noPoseFrames.current += 1
+      if (noPoseFrames.current > 15) {
+        setFeedback('⚠️ No pose detected - make sure your full body is visible and facing the camera')
+      }
       return
     }
+
+    // We have landmarks – reset missing counter and cache them
+    noPoseFrames.current = 0
+    lastLandmarksRef.current = lm
     
     console.log('Pose landmarks detected! Count:', lm.length)
     console.log('Analyzing pose for:', exerciseName)
@@ -489,6 +573,7 @@ function Trainer() {
     let score = 100
     let feedbackMessage = ''
     let voiceMessage = ''
+    let voicePriority: 'low' | 'medium' | 'high' = 'medium'
     
     // Always calculate basic angles for pose matching
     const kneeAngle = angle(L.hip, L.knee, L.ankle)
@@ -500,10 +585,28 @@ function Trainer() {
     console.log('Reference angles:', referenceAngles)
     console.log('Exercise instructions available:', instructions.length)
 
+    // Detect pose stability to reduce noisy feedback
+    const stabilityAngles: Record<string, number> = {}
+    if (name.includes('squat')) {
+      stabilityAngles.knee = Math.round(kneeAngle)
+      stabilityAngles.back = Math.round(backAngle)
+    } else if (name.includes('push') || name.includes('press-up')) {
+      stabilityAngles.elbow = Math.round(elbowAngle)
+      stabilityAngles.hip = Math.round(hipAngle)
+    } else {
+      stabilityAngles.back = Math.round(backAngle)
+    }
+
+    const isStable = detectPoseStability(stabilityAngles)
+
     // Enhanced squat analysis with better pose matching
     if (name.includes('squat')) {
-      const refKnee = referenceAngles.knee || 90
-      const refBack = referenceAngles.back || 150
+      const refKneeRaw = referenceAngles.knee
+      const refBackRaw = referenceAngles.back
+
+      // Use GIF reference angles when they look reasonable, otherwise fall back to ideal values
+      const refKnee = refKneeRaw && refKneeRaw > 40 && refKneeRaw < 140 ? refKneeRaw : 90
+      const refBack = refBackRaw && refBackRaw > 120 && refBackRaw < 190 ? refBackRaw : 150
       
       console.log('Squat analysis - refKnee:', refKnee, 'refBack:', refBack)
       
@@ -536,6 +639,7 @@ function Trainer() {
         voiceMessage = voiceCues.find((cue: string) => 
           cue.toLowerCase().includes('back') || cue.toLowerCase().includes('chest')
         ) || instructions[2] || 'Keep your back straight'
+        voicePriority = 'high'
         score -= 15
       }
       
@@ -543,8 +647,12 @@ function Trainer() {
     }
     // Enhanced push-up analysis
     else if (name.includes('push') || name.includes('press-up')) {
-      const refElbow = referenceAngles.elbow || 60
-      const refHip = referenceAngles.hip || 150
+      const refElbowRaw = referenceAngles.elbow
+      const refHipRaw = referenceAngles.hip
+
+      // Use GIF reference angles when they look reasonable, otherwise fall back to ideal values
+      const refElbow = refElbowRaw && refElbowRaw > 20 && refElbowRaw < 140 ? refElbowRaw : 60
+      const refHip = refHipRaw && refHipRaw > 120 && refHipRaw < 200 ? refHipRaw : 150
       
       console.log('Push-up analysis - refElbow:', refElbow, 'refHip:', refHip)
       
@@ -573,85 +681,138 @@ function Trainer() {
         feedbackMessage = '⚠️ Keep your body straight'
         // Use exercise instruction if available
         voiceMessage = instructions[2] || 'Maintain plank position'
+        voicePriority = 'high'
         score -= 15
       }
       
       setAngles({ elbow: Math.round(elbowAngle), hip: Math.round(hipAngle) })
+    }
+    // Cardio / jump analysis (e.g., astride jumps)
+    else if (name.includes('jump') || name.includes('astride')) {
+      const spread = Math.abs(L.ankle.x - R.ankle.x) * 100
+      const kneeL = angle(L.hip, L.knee, L.ankle)
+      const kneeR = angle(R.hip, R.knee, R.ankle)
+
+      setAngles({
+        spread: Math.round(spread),
+        kneeL: Math.round(kneeL),
+        kneeR: Math.round(kneeR),
+      })
+
+      // Use simple, generous thresholds so reps register reliably
+      const wideThreshold = 8
+      const narrowThreshold = 4
+
+      console.log('Jump analysis - spread:', spread, 'wideThreshold:', wideThreshold, 'narrowThreshold:', narrowThreshold)
+
+      const step0 = instructions[0] // Stand with your feet shoulder-width apart
+      const step1 = instructions[1] // Bend your knees and lower your body into a squat position.
+      const step2 = instructions[2] // Jump explosively upwards, extending your legs and arms.
+      const step3 = instructions[3] // While in the air, spread your legs apart...
+      const step4 = instructions[4] // Land softly with your feet shoulder-width apart...
+      const step5 = instructions[5] // Repeat for the desired number of repetitions.
+
+      // Coaching when moving but not wide enough
+      if (spread < wideThreshold && spread > narrowThreshold && step1) {
+        feedbackMessage = step1
+        voiceMessage = step1
+        voicePriority = 'high'
+        setInstructionIndex(1)
+      }
+
+      // Legs out wide phase – map to jump / spread-in-air instructions
+      if (spread > wideThreshold) {
+        if (stage !== 'down') {
+          setStage('down')
+          if (step3) {
+            setInstructionIndex(3)
+            feedbackMessage = step3
+            voiceMessage = step3
+          } else if (step2) {
+            setInstructionIndex(2)
+            feedbackMessage = step2
+            voiceMessage = step2
+          }
+        }
+      } else if (spread < narrowThreshold) {
+        // Landing / feet-together phase – this is where we count a rep
+        if (stage === 'down') {
+          setStage('up')
+          setReps((r) => {
+            const next = r + 1
+            if (step5) {
+              speak(step5, 'low')
+            }
+            return next
+          })
+
+          if (step4) {
+            setInstructionIndex(4)
+            feedbackMessage = step4
+            voiceMessage = step4
+          }
+        } else if (stage !== 'up') {
+          setStage('up')
+        }
+      }
     }
     // General exercise analysis
     else {
       const shouldersLevel = Math.abs(L.shoulder.y - R.shoulder.y)
       setAngles({ shoulders: Math.round(shouldersLevel * 100) })
       
-      // Always use exercise instructions from dataset
+      // Use exercise instructions from dataset when available
       if (instructions.length > 0) {
-        // Use the first instruction as general feedback
         feedbackMessage = instructions[0]
-        voiceMessage = instructions[0] // Use same instruction for voice
-      } else {
-        // Fallback only if no instructions available
-        feedbackMessage = '✓ Good form'
-        voiceMessage = 'Continue with good form'
+        voiceMessage = instructions[0]
       }
     }
     
-    // Update feedback and voice
+    // Update feedback and voice – always show feedback when we have landmarks
     if (feedbackMessage) {
       setFeedback(feedbackMessage)
     }
     
-    // Always speak voice messages (remove random restriction)
+    // Speak voice messages (still rate-limited inside speak)
     if (voiceMessage) {
       console.log('Speaking voice message:', voiceMessage)
-      speak(voiceMessage)
+      speak(voiceMessage, voicePriority)
     }
     
-    // Calculate pose matching score - ALWAYS calculate this
-    let poseMatch = 100
-    
-    // Always calculate pose match based on exercise type
-    if (name.includes('squat')) {
-      if (referenceAngles.knee) {
-        const kneeDiff = Math.abs(kneeAngle - referenceAngles.knee)
+    // Calculate pose matching score only when pose is stable enough
+    if (isStable) {
+      let poseMatch = 100
+      
+      if (name.includes('squat')) {
+        const idealKnee = 90
+        const refKneeSource = referenceAngles.knee
+        const kneeRef = refKneeSource && refKneeSource > 40 && refKneeSource < 140 ? refKneeSource : idealKnee
+        const kneeDiff = Math.abs(kneeAngle - kneeRef)
         poseMatch = Math.max(0, 100 - kneeDiff * 2)
         console.log('Squat pose match - kneeDiff:', kneeDiff, 'poseMatch:', poseMatch)
-      } else {
-        // Fallback: use ideal squat angle of 90 degrees
-        const idealKnee = 90
-        const kneeDiff = Math.abs(kneeAngle - idealKnee)
-        poseMatch = Math.max(0, 100 - kneeDiff * 2)
-        console.log('Squat pose match (fallback) - kneeDiff:', kneeDiff, 'poseMatch:', poseMatch)
-      }
-    } else if (name.includes('push') || name.includes('press-up')) {
-      if (referenceAngles.elbow) {
-        const elbowDiff = Math.abs(elbowAngle - referenceAngles.elbow)
+      } else if (name.includes('push') || name.includes('press-up')) {
+        const idealElbow = 60
+        const refElbowSource = referenceAngles.elbow
+        const elbowRef = refElbowSource && refElbowSource > 20 && refElbowSource < 140 ? refElbowSource : idealElbow
+        const elbowDiff = Math.abs(elbowAngle - elbowRef)
         poseMatch = Math.max(0, 100 - elbowDiff * 2)
         console.log('Push-up pose match - elbowDiff:', elbowDiff, 'poseMatch:', poseMatch)
+      } else if (name.includes('jump') || name.includes('astride')) {
+        const idealJumpKnee = 170
+        const kneeDiff = Math.abs(kneeAngle - idealJumpKnee)
+        poseMatch = Math.max(0, 100 - kneeDiff * 1.5)
+        console.log('Jump pose match - kneeDiff:', kneeDiff, 'poseMatch:', poseMatch)
       } else {
-        // Fallback: use ideal push-up angle of 60 degrees
-        const idealElbow = 60
-        const elbowDiff = Math.abs(elbowAngle - idealElbow)
-        poseMatch = Math.max(0, 100 - elbowDiff * 2)
-        console.log('Push-up pose match (fallback) - elbowDiff:', elbowDiff, 'poseMatch:', poseMatch)
+        const idealBack = 160
+        const backDiff = Math.abs(backAngle - idealBack)
+        poseMatch = Math.max(0, 100 - backDiff * 1.5)
+        console.log('General pose match - backDiff:', backDiff, 'poseMatch:', poseMatch)
       }
-    } else if (name.includes('jump') || name.includes('astride')) {
-      // For jumps, use knee angles
-      const idealJumpKnee = 170
-      const kneeDiff = Math.abs(kneeAngle - idealJumpKnee)
-      poseMatch = Math.max(0, 100 - kneeDiff * 1.5)
-      console.log('Jump pose match - kneeDiff:', kneeDiff, 'poseMatch:', poseMatch)
-    } else {
-      // For any other exercise, use general form metrics
-      // Use back angle and shoulder level for general form
-      const idealBack = 160
-      const backDiff = Math.abs(backAngle - idealBack)
-      poseMatch = Math.max(0, 100 - backDiff * 1.5)
-      console.log('General pose match - backDiff:', backDiff, 'poseMatch:', poseMatch)
+      
+      console.log('Final scores - form:', score, 'poseMatch:', poseMatch)
+      setPoseMatchScore(Math.round(poseMatch))
+      setFormScore(Math.max(0, Math.round(score)))
     }
-    
-    console.log('Final scores - form:', score, 'poseMatch:', poseMatch)
-    setPoseMatchScore(Math.round(poseMatch))
-    setFormScore(Math.max(0, Math.round(score)))
     
     // Remove generic voice feedback - only use exercise-specific instructions
     // The voice feedback is already handled in the exercise-specific sections above
@@ -1102,6 +1263,8 @@ function Trainer() {
           display: flex;
           flex-direction: column;
           gap: 12px;
+          max-height: 160px;
+          overflow-y: auto;
         }
         .instruction-slide {
           display: flex;
@@ -1116,6 +1279,11 @@ function Trainer() {
         .instruction-slide:hover {
           background: rgba(16, 185, 129, 0.2);
           transform: translateX(5px);
+        }
+        .instruction-slide.active {
+          background: rgba(250, 204, 21, 0.15);
+          border-left-color: #facc15;
+          transform: translateX(4px);
         }
         .instruction-step {
           color: #10b981;
@@ -1238,9 +1406,12 @@ function Trainer() {
           {instructions.length > 0 && (
             <div className="instructions-panel-bottom">
               <div className="instructions-header">Exercise Instructions</div>
-              <div className="instructions-carousel">
+              <div className="instructions-carousel" ref={instructionsContainerRef}>
                 {instructions.map((instruction, index) => (
-                  <div key={index} className="instruction-slide">
+                  <div
+                    key={index}
+                    className={`instruction-slide ${instructionIndex === index ? 'active' : ''}`}
+                  >
                     <span className="instruction-step">Step {index + 1}</span>
                     <span className="instruction-content">{instruction}</span>
                   </div>
@@ -1259,18 +1430,7 @@ function Trainer() {
             <div className="pose-match-label">Pose Match</div>
           </div>
 
-          {exerciseMetadata && (
-            <div className="exercise-metadata-compact">
-              <div className="metadata-item">
-                <span className="metadata-label">Type:</span>
-                <span className="metadata-value">{exerciseMetadata.exercise_type}</span>
-              </div>
-              <div className="metadata-item">
-                <span className="metadata-label">Target:</span>
-                <span className="metadata-value">{exerciseMetadata.target}</span>
-              </div>
-            </div>
-          )}
+          {/* Compact exercise metadata removed (Type/Target labels) */}
 
           <div className="angle-panel">
             {Object.entries(angles).map(([k, v]) => (
@@ -1313,18 +1473,12 @@ function Trainer() {
             )}
             {exerciseMetadata && (
               <div className="exercise-metadata">
-                <div className="metadata-item">
-                  <span className="metadata-label">Type:</span>
-                  <span className="metadata-value">{exerciseMetadata.exercise_type || 'N/A'}</span>
-                </div>
-                <div className="metadata-item">
-                  <span className="metadata-label">Target:</span>
-                  <span className="metadata-value">{exerciseMetadata.target || 'N/A'}</span>
-                </div>
-                <div className="metadata-item">
-                  <span className="metadata-label">Equipment:</span>
-                  <span className="metadata-value">{exerciseMetadata.equipment || 'N/A'}</span>
-                </div>
+                {exerciseMetadata.equipment && exerciseMetadata.equipment !== 'N/A' && (
+                  <div className="metadata-item">
+                    <span className="metadata-label">Equipment:</span>
+                    <span className="metadata-value">{exerciseMetadata.equipment}</span>
+                  </div>
+                )}
                 {exerciseMetadata.muscle_groups && exerciseMetadata.muscle_groups.length > 0 && (
                   <div className="metadata-item">
                     <span className="metadata-label">Muscles:</span>
@@ -1362,169 +1516,6 @@ function Trainer() {
 
       <div className="controls">
         <button className="exit-btn" onClick={() => window.history.back()}>Finish Session</button>
-        <div style={{marginTop: '10px', display: 'flex', gap: '10px', flexWrap: 'wrap'}}>
-          <button 
-            onClick={() => speak('Test voice feedback is working')}
-            style={{background: '#10b981', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer'}}
-          >
-            Test Voice
-          </button>
-          <button 
-            onClick={() => {
-              console.log('=== CURRENT STATE DEBUG ===')
-              console.log('ready:', ready)
-              console.log('reps:', reps)
-              console.log('stage:', stage)
-              console.log('feedback:', feedback)
-              console.log('formScore:', formScore)
-              console.log('poseMatchScore:', poseMatchScore)
-              console.log('instructions length:', instructions.length)
-              console.log('instructions:', instructions)
-              console.log('poseHints:', poseHints ? 'loaded' : 'not loaded')
-              console.log('referenceAngles:', referenceAngles)
-              console.log('angles:', angles)
-              console.log('exerciseName:', exerciseName)
-              console.log('gifSrc:', gifSrc)
-              console.log('speechSynthesis available:', !!window.speechSynthesis)
-              if (window.speechSynthesis) {
-                console.log('voices:', window.speechSynthesis.getVoices().length)
-              }
-            }}
-            style={{background: '#6366f1', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer'}}
-          >
-            Debug State
-          </button>
-          <button 
-            onClick={() => {
-              console.log('=== TESTING INSTRUCTIONS LOADING ===')
-              console.log('Current instructions:', instructions)
-              console.log('Instructions length:', instructions.length)
-              
-              // Test with sample instructions if empty
-              if (instructions.length === 0) {
-                const sampleInstructions = [
-                  'Lie flat on your back with your knees bent',
-                  'Place your hands behind your head',
-                  'Engaging your abs, slowly lift your upper body',
-                  'Pause for a moment at the top',
-                  'Slowly lower your upper body back down',
-                  'Repeat for the desired number of repetitions'
-                ]
-                console.log('Setting sample instructions:', sampleInstructions)
-                setInstructions(sampleInstructions)
-                speak('Testing with sample instructions: Lie flat on your back with your knees bent')
-              } else {
-                console.log('Speaking first instruction:', instructions[0])
-                speak(instructions[0])
-              }
-            }}
-            style={{background: '#8b5cf6', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer'}}
-          >
-            Test Instructions
-          </button>
-          <button 
-            onClick={() => {
-              console.log('=== RESTARTING VIDEO ===')
-              if (videoRef.current) {
-                console.log('Restarting video stream...')
-                setReady(false)
-                setFeedback('🔄 Restarting camera...')
-                
-                // Stop current stream
-                if (videoRef.current.srcObject) {
-                  const stream = videoRef.current.srcObject as MediaStream
-                  stream.getTracks().forEach(track => track.stop())
-                }
-                
-                // Restart camera
-                navigator.mediaDevices.getUserMedia({ 
-                  video: { 
-                    width: 640, 
-                    height: 480,
-                    facingMode: 'user'
-                  } 
-                })
-                .then(stream => {
-                  console.log('Camera restarted successfully')
-                  videoRef.current!.srcObject = stream
-                  videoRef.current!.play().then(() => {
-                    console.log('Video playing after restart')
-                    setReady(true)
-                    setFeedback('✅ Camera restarted')
-                  }).catch(error => {
-                    console.error('Error playing video after restart:', error)
-                    setFeedback('⚠️ Error playing video')
-                  })
-                })
-                .catch(error => {
-                  console.error('Error restarting camera:', error)
-                  setFeedback('⚠️ Camera restart failed')
-                })
-              }
-            }}
-            style={{background: '#f59e0b', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer'}}
-          >
-            Restart Camera
-          </button>
-          <button 
-            onClick={() => {
-              console.log('=== TESTING POSE DETECTION ===')
-              if (videoRef.current) {
-                console.log('Video element exists')
-                console.log('Video ready state:', videoRef.current.readyState)
-                console.log('Video dimensions:', videoRef.current.videoWidth, 'x', videoRef.current.videoHeight)
-                console.log('Canvas element exists:', !!canvasRef.current)
-                if (canvasRef.current) {
-                  console.log('Canvas dimensions:', canvasRef.current.width, 'x', canvasRef.current.height)
-                }
-              } else {
-                console.log('Video element does not exist')
-              }
-              
-              // Test pose detection manually
-              if (canvasRef.current && videoRef.current) {
-                const ctx = canvasRef.current.getContext('2d')
-                if (ctx) {
-                  console.log('Canvas context exists')
-                  ctx.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height)
-                  console.log('Drew video frame to canvas')
-                }
-              }
-            }}
-            style={{background: '#f59e0b', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer'}}
-          >
-            Test Pose
-          </button>
-          <button 
-            onClick={() => {
-              console.log('=== TESTING SPEECH SYNTHESIS ===')
-              if ('speechSynthesis' in window) {
-                console.log('Speech synthesis supported')
-                const synth = window.speechSynthesis
-                console.log('Speaking:', synth.speaking)
-                console.log('Pending:', synth.pending)
-                console.log('Paused:', synth.paused)
-                const voices = synth.getVoices()
-                console.log('Available voices:', voices.length)
-                voices.forEach((voice, i) => {
-                  console.log(`Voice ${i}: ${voice.name} (${voice.lang})`)
-                })
-                
-                // Test speech
-                const utter = new SpeechSynthesisUtterance('Testing speech synthesis')
-                utter.onstart = () => console.log('Test speech started')
-                utter.onend = () => console.log('Test speech ended')
-                utter.onerror = (e) => console.error('Test speech error:', e)
-                synth.speak(utter)
-              } else {
-                console.error('Speech synthesis not supported')
-              }
-            }}
-            style={{background: '#ef4444', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer'}}
-          >
-            Test Speech API
-          </button>
-        </div>
       </div>
     </div>
   )
