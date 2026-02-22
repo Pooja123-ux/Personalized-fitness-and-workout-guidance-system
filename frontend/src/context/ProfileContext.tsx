@@ -8,6 +8,8 @@ type Profile = {
   weight_kg: number;
   height_cm: number;
   lifestyle_level: string;
+  water_l?: number;
+  diet_type?: string;
 };
 
 type Progress = {

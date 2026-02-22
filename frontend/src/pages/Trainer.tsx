@@ -9,6 +9,7 @@ function Trainer() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const [ready, setReady] = useState(false)
   const [cameraError, setCameraError] = useState<string | null>(null)
+  const [cameraStatus, setCameraStatus] = useState<'idle' | 'requesting' | 'ready' | 'error'>('idle')
   const [cameraRetryToken, setCameraRetryToken] = useState(0)
   const [reps, setReps] = useState(0)
   const [stage, setStage] = useState<'up' | 'down' | 'none'>('none')
@@ -29,6 +30,9 @@ function Trainer() {
   const [gifSrc, setGifSrc] = useState<string>('')
   const [apiGifSrc, setApiGifSrc] = useState<string>('')
   const [targetTotal, setTargetTotal] = useState<number | null>(null)
+  const [targetDurationSec, setTargetDurationSec] = useState<number | null>(null)
+  const [holdElapsedSec, setHoldElapsedSec] = useState(0)
+  const [voiceEnabled, setVoiceEnabled] = useState(false)
   const [plan, setPlan] = useState<Array<{name:string; repetitions:string; gif_url:string}>>([])
   const [angles, setAngles] = useState<Record<string, number>>({})
   const [referenceAngles, setReferenceAngles] = useState<Record<string, number>>({})
@@ -45,6 +49,10 @@ function Trainer() {
   const [instructionIndex, setInstructionIndex] = useState(0)
   const instructionsContainerRef = useRef<HTMLDivElement | null>(null)
   const maxSpreadRef = useRef(0)
+  const advancingRef = useRef(false)
+  const lastRepSpokenRef = useRef(0)
+  const voiceAnnouncedRef = useRef(false)
+  const lastInstructionVoiceAtRef = useRef(0)
 
   function toAbsoluteApiUrl(base: string, url: string): string {
     if (!url) return ''
@@ -186,6 +194,9 @@ function Trainer() {
       console.log('Empty speech text, skipping')
       return
     }
+    if (!voiceEnabled) {
+      return
+    }
 
     // Rate limiting for voice feedback to avoid spam
     const now = Date.now()
@@ -289,38 +300,118 @@ function Trainer() {
     }
   }, [])
 
+  useEffect(() => {
+    const enableOnGesture = () => {
+      setVoiceEnabled(true)
+      window.removeEventListener('pointerdown', enableOnGesture)
+    }
+    window.addEventListener('pointerdown', enableOnGesture, { once: true })
+    return () => window.removeEventListener('pointerdown', enableOnGesture)
+  }, [])
+
+  useEffect(() => {
+    if (!voiceEnabled || voiceAnnouncedRef.current) return
+    voiceAnnouncedRef.current = true
+    speak('Voice coaching enabled', 'high')
+    if (instructions.length > 0) {
+      const firstInstruction = instructions[0]
+      setFeedback(firstInstruction)
+      setInstructionIndex(0)
+      speak(firstInstruction, 'high')
+    }
+  }, [voiceEnabled])
+
+  useEffect(() => {
+    if (!voiceEnabled) return
+    if (!instructions.length) return
+    const now = Date.now()
+    if (now - lastInstructionVoiceAtRef.current < 7000) return
+    const activeInstruction =
+      instructions[Math.max(0, Math.min(instructionIndex, instructions.length - 1))]
+    if (!activeInstruction) return
+    lastInstructionVoiceAtRef.current = now
+    speak(activeInstruction, 'low')
+  }, [instructionIndex, instructions, voiceEnabled])
+
   function goToIndex(i: number, p: Array<{name:string; repetitions:string; gif_url:string}>) {
     const next = p[i]
     if (!next) return
+    advancingRef.current = false
     setReps(0)
+    setHoldElapsedSec(0)
     setStage('none')
     window.location.href = `/trainer?name=${encodeURIComponent(next.name)}&reps=${encodeURIComponent(next.repetitions || '')}&gif=${encodeURIComponent(next.gif_url || '')}&idx=${i}`
   }
 
   function parseTarget(text: string): number | null {
     const t = (text || '').toLowerCase().trim()
-    const m = t.match(/^(\d+)\s*x\s*(\d+)$/)
-    if (m) {
-      const sets = parseInt(m[1], 10)
-      const reps = parseInt(m[2], 10)
+    if (!t) return null
+    const setRep = t.match(/(\d+)\s*x\s*(\d+)/)
+    if (setRep) {
+      const sets = parseInt(setRep[1], 10)
+      const reps = parseInt(setRep[2], 10)
       if (!isNaN(sets) && !isNaN(reps)) return sets * reps
     }
-    const n = parseInt(t, 10)
-    if (!isNaN(n)) return n
+    const range = t.match(/(\d+)\s*(?:-|to)\s*(\d+)/)
+    if (range) {
+      const low = parseInt(range[1], 10)
+      const high = parseInt(range[2], 10)
+      if (!isNaN(low) && !isNaN(high)) return Math.max(low, high)
+    }
+    const repsOnly = t.match(/(\d+)\s*(rep|reps|repetition|repetitions)\b/)
+    if (repsOnly) {
+      const value = parseInt(repsOnly[1], 10)
+      if (!isNaN(value)) return value
+    }
+    const n = t.match(/\b(\d+)\b/)
+    if (n) {
+      const value = parseInt(n[1], 10)
+      if (!isNaN(value)) return value
+    }
     return null
   }
 
+  function parseDurationSeconds(text: string): number | null {
+    const t = (text || '').toLowerCase().trim()
+    if (!t) return null
+    const sec = t.match(/(\d+)\s*(s|sec|secs|second|seconds)\b/)
+    if (sec) {
+      const value = parseInt(sec[1], 10)
+      return isNaN(value) ? null : value
+    }
+    const min = t.match(/(\d+)\s*(m|min|mins|minute|minutes)\b/)
+    if (min) {
+      const value = parseInt(min[1], 10)
+      return isNaN(value) ? null : value * 60
+    }
+    return null
+  }
+
+  function isHoldExercise(name: string): boolean {
+    const t = (name || '').toLowerCase()
+    return t.includes('plank') || t.includes('hold') || t.includes('wall sit') || t.includes('bridge pose')
+  }
+
   function advanceNext() {
-    if (!plan.length) return
+    if (advancingRef.current) return
+    advancingRef.current = true
+    if (!plan.length) {
+      advancingRef.current = false
+      return
+    }
     const nextIdx = idx + 1
     if (nextIdx >= plan.length) {
       speak('Workout complete. Great job!')
-      setFeedback('✅ Workout complete!')
-      setTimeout(() => window.history.back(), 3000)
+      setFeedback('Workout complete!')
+      setTimeout(() => {
+        advancingRef.current = false
+        window.history.back()
+      }, 3000)
       return
     }
     const next = plan[nextIdx]
     setReps(0)
+    setHoldElapsedSec(0)
     setStage('none')
     setIsResting(true)
     setRestTimer(30)
@@ -331,7 +422,18 @@ function Trainer() {
   }
 
   useEffect(() => {
-    setTargetTotal(parseTarget(targetReps))
+    const targetByReps = parseTarget(targetReps)
+    const targetByDuration = parseDurationSeconds(targetReps)
+    if (isHoldExercise(exerciseName) && targetByDuration) {
+      setTargetTotal(null)
+      setTargetDurationSec(targetByDuration)
+    } else {
+      setTargetTotal(targetByReps)
+      setTargetDurationSec(null)
+    }
+    setHoldElapsedSec(0)
+    advancingRef.current = false
+    lastRepSpokenRef.current = 0
     try {
       const raw = sessionStorage.getItem('workoutPlan') || '[]'
       const arr = JSON.parse(raw)
@@ -344,14 +446,56 @@ function Trainer() {
     } catch {
       setPlan([])
     }
-  }, [])
+  }, [exerciseName, targetReps])
 
   useEffect(() => {
+    if (advancingRef.current) return
     if (targetTotal !== null && reps >= targetTotal) {
       speak('Exercise complete')
       advanceNext()
     }
   }, [reps, targetTotal])
+
+  useEffect(() => {
+    if (reps <= 0) return
+    if (reps === lastRepSpokenRef.current) return
+    lastRepSpokenRef.current = reps
+    if (targetTotal && targetTotal > 0) {
+      const progress = Math.min(100, Math.round((reps / targetTotal) * 100))
+      setFeedback(`Rep ${reps}/${targetTotal} completed. Keep going.`)
+      if (progress % 25 === 0 || reps === 1) {
+        speak(`Rep ${reps} complete`, 'low')
+      }
+      if (instructions.length > 0) {
+        const nextInstructionIndex = Math.min(
+          instructions.length - 1,
+          Math.floor((reps / targetTotal) * instructions.length)
+        )
+        setInstructionIndex(nextInstructionIndex)
+      }
+    } else {
+      setFeedback(`Rep ${reps} completed. Keep going.`)
+      speak(`Rep ${reps} complete`, 'low')
+    }
+  }, [reps, targetTotal, instructions.length])
+
+  useEffect(() => {
+    if (advancingRef.current) return
+    if (targetDurationSec !== null && holdElapsedSec >= targetDurationSec) {
+      speak('Hold complete')
+      advanceNext()
+    }
+  }, [holdElapsedSec, targetDurationSec])
+
+  useEffect(() => {
+    if (!ready || targetDurationSec === null || isResting) return
+    const timer = setInterval(() => {
+      if (isPoseStableRef.current) {
+        setHoldElapsedSec((s) => s + 1)
+      }
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [ready, targetDurationSec, isResting])
 
   function drawLandmarks(results: Results) {
     const canvas = canvasRef.current
@@ -882,10 +1026,43 @@ function Trainer() {
 
     let cancelled = false
     let localStream: MediaStream | null = null
+    let restartAttempts = 0
+    let restartTimer: ReturnType<typeof setTimeout> | null = null
 
     const stopStream = (stream: MediaStream | null) => {
       if (!stream) return
       stream.getTracks().forEach((t) => t.stop())
+    }
+
+    const clearRestartTimer = () => {
+      if (!restartTimer) return
+      clearTimeout(restartTimer)
+      restartTimer = null
+    }
+
+    const requestStream = async (): Promise<MediaStream> => {
+      const attempts: MediaStreamConstraints[] = [
+        {
+          video: {
+            facingMode: { ideal: 'user' },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
+        },
+        { video: { facingMode: 'user' }, audio: false },
+        { video: true, audio: false }
+      ]
+      let lastError: unknown = null
+      for (const constraints of attempts) {
+        try {
+          return await navigator.mediaDevices.getUserMedia(constraints)
+        } catch (err) {
+          lastError = err
+          console.warn('Camera attempt failed:', constraints, err)
+        }
+      }
+      throw lastError || new Error('Unable to start camera')
     }
 
     const startCamera = async () => {
@@ -894,19 +1071,23 @@ function Trainer() {
           throw new Error('getUserMedia is not supported in this browser')
         }
 
+        const existing = v.srcObject as MediaStream | null
+        if (existing) {
+          stopStream(existing)
+          v.srcObject = null
+        }
+        if (localStream) {
+          stopStream(localStream)
+          localStream = null
+        }
+
         console.log('Requesting camera access...')
         setFeedback('Requesting camera access...')
+        setCameraStatus('requesting')
         setReady(false)
         setCameraError(null)
 
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: 'user',
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-          },
-          audio: false
-        })
+        const stream = await requestStream()
 
         if (cancelled) {
           stopStream(stream)
@@ -914,17 +1095,48 @@ function Trainer() {
         }
 
         localStream = stream
+        const scheduleRestart = (reason: string) => {
+          if (cancelled) return
+          if (restartAttempts >= 5) {
+            const message = `Camera interrupted repeatedly. ${reason} Please tap Retry Camera.`
+            setCameraStatus('error')
+            setCameraError(message)
+            setFeedback(message)
+            setReady(false)
+            return
+          }
+          restartAttempts += 1
+          setReady(false)
+          setCameraStatus('requesting')
+          setFeedback(`Camera interrupted (${reason}). Reconnecting...`)
+          clearRestartTimer()
+          restartTimer = setTimeout(() => {
+            void startCamera()
+          }, 750)
+        }
+
+        stream.getTracks().forEach((track) => {
+          track.onended = () => scheduleRestart('track ended')
+        })
+        ;(stream as any).oninactive = () => scheduleRestart('stream inactive')
+
         v.srcObject = stream
         v.muted = true
         v.playsInline = true
         v.autoplay = true
+        v.setAttribute('playsinline', 'true')
+        v.setAttribute('autoplay', 'true')
+        v.setAttribute('muted', 'true')
 
         const tryPlay = async () => {
           try {
             await v.play()
             if (!cancelled) {
               console.log('Video playing, setting ready to true')
+              restartAttempts = 0
+              clearRestartTimer()
               setReady(true)
+              setCameraStatus('ready')
               setCameraError(null)
               setFeedback('Position yourself in view')
             }
@@ -932,11 +1144,23 @@ function Trainer() {
             console.error('Error playing video:', playError)
             if (!cancelled) {
               setReady(false)
+              setCameraStatus('error')
               const message = buildCameraErrorMessage(playError)
               setCameraError(message)
               setFeedback(message)
             }
           }
+        }
+
+        v.onpause = () => {
+          if (cancelled) return
+          if (v.ended) {
+            scheduleRestart('video ended')
+            return
+          }
+          void v.play().catch(() => {
+            scheduleRestart('video paused')
+          })
         }
 
         if (v.readyState >= 1) {
@@ -945,11 +1169,15 @@ function Trainer() {
           v.onloadedmetadata = () => {
             void tryPlay()
           }
+          v.oncanplay = () => {
+            void tryPlay()
+          }
         }
       } catch (error) {
         console.error('Camera access denied or failed:', error)
         if (!cancelled) {
           setReady(false)
+          setCameraStatus('error')
           const message = buildCameraErrorMessage(error)
           setCameraError(message)
           setFeedback(message)
@@ -959,10 +1187,29 @@ function Trainer() {
 
     void startCamera()
 
+    const onVisibilityChange = () => {
+      if (cancelled) return
+      if (document.visibilityState !== 'visible') return
+      const current = v.srcObject as MediaStream | null
+      if (!current || v.paused || v.readyState < 2) {
+        void startCamera()
+      } else {
+        void v.play().catch(() => {
+          void startCamera()
+        })
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+
     return () => {
       cancelled = true
+      clearRestartTimer()
       setReady(false)
+      setCameraStatus('idle')
       v.onloadedmetadata = null
+      v.oncanplay = null
+      v.onpause = null
+      document.removeEventListener('visibilitychange', onVisibilityChange)
       const current = v.srcObject as MediaStream | null
       if (current) {
         stopStream(current)
@@ -1045,7 +1292,10 @@ function Trainer() {
       <style>{`
         .trainer-page {
           min-height: 100vh;
-          background: #0f172a;
+          background:
+            radial-gradient(circle at 10% 10%, rgba(56, 189, 248, 0.18), transparent 36%),
+            radial-gradient(circle at 90% 90%, rgba(16, 185, 129, 0.2), transparent 34%),
+            linear-gradient(155deg, #020617 0%, #0f172a 52%, #111827 100%);
           display: flex;
           flex-direction: column;
           align-items: center;
@@ -1071,8 +1321,8 @@ function Trainer() {
           height: 480px;
           border-radius: 24px;
           overflow: hidden;
-          box-shadow: 0 20px 50px rgba(0,0,0,0.5);
-          border: 1px solid #334155;
+          box-shadow: 0 24px 64px rgba(2, 6, 23, 0.65);
+          border: 1px solid rgba(148, 163, 184, 0.28);
           background: #000;
         }
 
@@ -1130,15 +1380,34 @@ function Trainer() {
           bottom: 20px;
           left: 50%;
           transform: translateX(-50%);
-          background: rgba(15, 23, 42, 0.95);
+          background: rgba(2, 6, 23, 0.92);
           padding: 12px 24px;
           border-radius: 100px;
           font-weight: 600;
-          color: #10b981;
-          border: 1px solid rgba(16, 185, 129, 0.3);
+          color: #d1fae5;
+          border: 1px solid rgba(16, 185, 129, 0.4);
+          backdrop-filter: blur(6px);
           z-index: 10;
           max-width: 85%;
           text-align: center;
+        }
+        .voice-enable-btn {
+          position: absolute;
+          bottom: 76px;
+          left: 50%;
+          transform: translateX(-50%);
+          border: 1px solid rgba(56, 189, 248, 0.55);
+          background: rgba(14, 116, 144, 0.85);
+          color: #f0f9ff;
+          font-weight: 800;
+          padding: 10px 16px;
+          border-radius: 999px;
+          cursor: pointer;
+          z-index: 12;
+          box-shadow: 0 6px 18px rgba(14, 116, 144, 0.35);
+        }
+        .voice-enable-btn:hover {
+          background: rgba(2, 132, 199, 0.92);
         }
         .camera-error-overlay {
           position: absolute;
@@ -1177,7 +1446,7 @@ function Trainer() {
           position: absolute;
           top: 20px;
           right: 20px;
-          background: rgba(0, 0, 0, 0.5);
+          background: rgba(2, 6, 23, 0.88);
           padding: 6px 12px;
           border-radius: 8px;
           font-size: 0.7rem;
@@ -1538,6 +1807,10 @@ function Trainer() {
         @media (max-width: 1000px) {
           .main-workspace { flex-direction: column; align-items: center; }
           .hud-container, .gif-panel { width: 100%; max-width: 640px; }
+          .voice-enable-btn {
+            bottom: 92px;
+            width: calc(100% - 40px);
+          }
         }
       `}</style>
 
@@ -1547,13 +1820,13 @@ function Trainer() {
           <canvas ref={canvasRef} />
           
           <div className="rep-counter">
-            <span className="rep-count">{reps}</span>
-            <span className="rep-label">Reps</span>
+            <span className="rep-count">{targetDurationSec !== null ? holdElapsedSec : reps}</span>
+            <span className="rep-label">{targetDurationSec !== null ? 'Hold Sec' : 'Reps'}</span>
           </div>
 
           <div className="status-badge">
             <div className={`dot ${ready ? 'active' : 'inactive'}`}></div> 
-            {ready ? 'POSE DETECTED' : 'INITIALIZING...'}
+            {cameraStatus === 'requesting' ? 'REQUESTING CAMERA' : ready ? 'POSE DETECTED' : 'INITIALIZING'}
           </div>
 
           <div className="metrics-panel">
@@ -1567,9 +1840,22 @@ function Trainer() {
             </div>
             <div className="metric-item">
               <span className="metric-label">Target</span>
-              <span className="metric-value">{targetReps}</span>
+              <span className="metric-value">{targetDurationSec !== null ? `${targetDurationSec}s hold` : targetReps || 'N/A'}</span>
             </div>
           </div>
+
+          {!voiceEnabled && (
+            <button
+              type="button"
+              className="voice-enable-btn"
+              onClick={() => {
+                setVoiceEnabled(true)
+                setFeedback('Voice coaching enabled')
+              }}
+            >
+              Enable Voice Coaching
+            </button>
+          )}
 
           <div className="feedback-pill">{feedback}</div>
           {!ready && cameraError && (
@@ -1622,7 +1908,7 @@ function Trainer() {
             {Object.entries(angles).map(([k, v]) => (
               <div key={k} className="angle-item">
                 <span className="angle-label">{k.toUpperCase()}</span>
-                <span className="angle-value">{v}°</span>
+                <span className="angle-value">{v} deg</span>
               </div>
             ))}
           </div>
@@ -1708,3 +1994,4 @@ function Trainer() {
 }
 
 export default Trainer
+

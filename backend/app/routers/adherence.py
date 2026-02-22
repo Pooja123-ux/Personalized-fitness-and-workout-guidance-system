@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..deps import get_current_user, get_db
-from ..models import Profile, AdherenceLog
+from ..models import Profile, AdherenceLog, WorkoutDailyLog
 
 router = APIRouter()
 
@@ -32,6 +32,12 @@ class DayAdherencePayload(BaseModel):
     extra_foods: List[ExtraFoodItem] = []
     water_ml: int = 0
     water_target_ml: int = 2000
+
+
+class WorkoutDayPayload(BaseModel):
+    date: date
+    completed: bool = False
+    calories_burned: float = 0
 
 
 # Emergency fallback if DB is unavailable.
@@ -83,6 +89,10 @@ def _has_food_log(item: DayAdherencePayload) -> bool:
 
 def _has_water_log(item: DayAdherencePayload) -> bool:
     return item.water_ml > 0
+
+
+def _has_workout_log(completed: bool, calories_burned: float) -> bool:
+    return bool(completed) or float(calories_burned or 0) > 0
 
 
 def _payload_from_row(row: AdherenceLog) -> DayAdherencePayload:
@@ -153,6 +163,30 @@ def _get_or_default_day(db: Session, user_id: int, target_date: date, default_ta
     return DayAdherencePayload(date=target_date, water_target_ml=default_target)
 
 
+def _get_or_default_workout_day(db: Session, user_id: int, target_date: date) -> Dict[str, float | bool]:
+    _ensure_workout_table(db)
+    row = (
+        db.query(WorkoutDailyLog)
+        .filter(WorkoutDailyLog.user_id == user_id, WorkoutDailyLog.log_date == target_date.isoformat())
+        .first()
+    )
+    if not row:
+        return {"completed": False, "calories_burned": 0.0}
+    return {
+        "completed": bool(row.completed),
+        "calories_burned": float(row.calories_burned or 0),
+    }
+
+
+def _ensure_workout_table(db: Session) -> None:
+    """Create workout log table lazily if it doesn't exist yet."""
+    try:
+        WorkoutDailyLog.__table__.create(bind=db.get_bind(), checkfirst=True)
+    except Exception:
+        # If DB permissions/driver prevent DDL here, fail soft and keep app running.
+        pass
+
+
 @router.get("/day/{target_date}")
 async def get_day_adherence(
     target_date: date,
@@ -163,6 +197,7 @@ async def get_day_adherence(
         profile = db.query(Profile).filter(Profile.user_id == user.id).first()
         default_target = _default_water_target_ml(profile)
         item = _get_or_default_day(db, int(user.id), target_date, default_target)
+        workout = _get_or_default_workout_day(db, int(user.id), target_date)
         extra_cal = sum(max(0, float(x.calories)) for x in item.extra_foods)
         consumed_total = max(0.0, float(item.consumed_planned_calories) + extra_cal)
         return {
@@ -172,6 +207,8 @@ async def get_day_adherence(
             "water_progress_percent": _water_progress_percent(item),
             "food_goal_met": _food_goal_met(item),
             "water_goal_met": _water_goal_met(item),
+            "workout_completed": bool(workout["completed"]),
+            "workout_calories_burned": round(float(workout["calories_burned"] or 0), 1),
         }
     except Exception as e:
         # Fallback to in-memory if DB path fails unexpectedly.
@@ -241,6 +278,53 @@ async def upsert_day_adherence(
             raise HTTPException(status_code=500, detail=f"Error updating day adherence: {str(e)}")
 
 
+@router.get("/workout/day/{target_date}")
+async def get_day_workout_adherence(
+    target_date: date,
+    user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        data = _get_or_default_workout_day(db, int(user.id), target_date)
+        return {
+            "date": target_date.isoformat(),
+            "workout_completed": bool(data["completed"]),
+            "workout_calories_burned": round(float(data["calories_burned"] or 0), 1),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching workout adherence: {str(e)}")
+
+
+@router.post("/workout/day")
+async def upsert_day_workout_adherence(
+    payload: WorkoutDayPayload,
+    user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        _ensure_workout_table(db)
+        log_date = payload.date.isoformat()
+        row = (
+            db.query(WorkoutDailyLog)
+            .filter(WorkoutDailyLog.user_id == int(user.id), WorkoutDailyLog.log_date == log_date)
+            .first()
+        )
+        if not row:
+            row = WorkoutDailyLog(user_id=int(user.id), log_date=log_date)
+            db.add(row)
+        row.completed = bool(payload.completed)
+        row.calories_burned = float(payload.calories_burned or 0)
+        db.commit()
+        return {
+            "message": "Workout adherence updated",
+            "date": log_date,
+            "workout_completed": bool(row.completed),
+            "workout_calories_burned": round(float(row.calories_burned or 0), 1),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating workout adherence: {str(e)}")
+
+
 @router.get("/summary")
 async def adherence_summary(
     days: int = 30,
@@ -256,15 +340,18 @@ async def adherence_summary(
         default_target = _default_water_target_ml(profile)
 
         day_lookup: Dict[str, DayAdherencePayload] = {}
+        workout_lookup: Dict[str, Dict[str, float | bool]] = {}
         for i in range(days):
             d = today - timedelta(days=i)
             item = _get_or_default_day(db, user_id, d, default_target)
             day_lookup[d.isoformat()] = item
+            workout_lookup[d.isoformat()] = _get_or_default_workout_day(db, user_id, d)
 
         series = []
         for i in range(days):
             d = today - timedelta(days=i)
             item = day_lookup[d.isoformat()]
+            workout_item = workout_lookup[d.isoformat()]
             extra_cal = sum(max(0, float(x.calories)) for x in item.extra_foods)
             consumed_total = max(0.0, float(item.consumed_planned_calories) + extra_cal)
             series.append(
@@ -278,6 +365,8 @@ async def adherence_summary(
                     "water_progress_percent": _water_progress_percent(item),
                     "food_goal_met": _food_goal_met(item),
                     "water_goal_met": _water_goal_met(item),
+                    "workout_completed": bool(workout_item["completed"]),
+                    "workout_calories_burned": round(float(workout_item["calories_burned"] or 0), 1),
                 }
             )
 
@@ -299,8 +388,13 @@ async def adherence_summary(
                     if _has_food_log(item):
                         cursor = d
                         break
-                else:
+                elif mode == "water":
                     if _has_water_log(item):
+                        cursor = d
+                        break
+                elif mode == "workout":
+                    workout = workout_lookup.get(d.isoformat()) or {"completed": False, "calories_burned": 0}
+                    if _has_workout_log(bool(workout.get("completed")), float(workout.get("calories_burned") or 0)):
                         cursor = d
                         break
             if cursor is None:
@@ -317,10 +411,17 @@ async def adherence_summary(
                     else:
                         break
                 else:
-                    if _water_goal_met(item):
-                        streak += 1
+                    if mode == "water":
+                        if _water_goal_met(item):
+                            streak += 1
+                        else:
+                            break
                     else:
-                        break
+                        workout = workout_lookup.get(cursor.isoformat()) or {"completed": False}
+                        if bool(workout.get("completed")):
+                            streak += 1
+                        else:
+                            break
                 cursor = cursor - timedelta(days=1)
             return streak
 
@@ -328,6 +429,7 @@ async def adherence_summary(
         latest_logged = None
         latest_food_logged = None
         latest_water_logged = None
+        latest_workout_logged = None
         for point in series:
             d = date.fromisoformat(point["date"])
             item = day_lookup.get(d.isoformat())
@@ -346,16 +448,25 @@ async def adherence_summary(
             if item and _has_water_log(item):
                 latest_water_logged = point
                 break
+        for point in series:
+            d = date.fromisoformat(point["date"])
+            workout = workout_lookup.get(d.isoformat()) or {"completed": False, "calories_burned": 0}
+            if _has_workout_log(bool(workout.get("completed")), float(workout.get("calories_burned") or 0)):
+                latest_workout_logged = point
+                break
 
         return {
             "today": today_point,
             "latest_logged": latest_logged,
             "latest_food_logged": latest_food_logged,
             "latest_water_logged": latest_water_logged,
+            "latest_workout_logged": latest_workout_logged,
             "food_streak_days": _streak_from_today("food_goal_met"),
             "water_streak_days": _streak_from_today("water_goal_met"),
+            "workout_streak_days": _streak_from_today("workout_completed"),
             "active_food_streak_days": _active_streak("food"),
             "active_water_streak_days": _active_streak("water"),
+            "active_workout_streak_days": _active_streak("workout"),
             "last_7_days": list(reversed(series[:7])),
         }
     except Exception as e:

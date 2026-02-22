@@ -45,6 +45,15 @@ class WeeklyWorkoutPlan(BaseModel):
 # In-memory storage for demo (use database in production)
 weekly_workout_plans = {}
 
+def infer_level_from_lifestyle(lifestyle_level: Optional[str]) -> str:
+    """Map profile lifestyle_level to workout level."""
+    value = (lifestyle_level or "").strip().lower()
+    if value in {"very_active", "active"}:
+        return "advanced"
+    if value in {"moderate", "light"}:
+        return "intermediate"
+    return "beginner"
+
 def get_weekly_workout_variety(target_area: str, level: str, weight_kg: float) -> Dict:
     """Get diverse workout plan for the week based on target area and user level"""
     
@@ -282,17 +291,19 @@ async def get_weekly_workout_plan(
         should_update = force_refresh or not current_plan
         
         # Check if weight changed significantly
-        if current_plan and profile.weight_kg:
-            weight_change = abs(profile.weight_kg - current_plan.based_on_weight)
+        profile_weight = getattr(profile, "weight_kg", None)
+        if current_plan is not None and profile_weight is not None:
+            weight_change = abs(float(profile_weight) - float(current_plan.based_on_weight))
             if weight_change >= 2.0:  # 2kg threshold
                 should_update = True
         
         if should_update:
             # Generate new plan
+            profile_level = infer_level_from_lifestyle(getattr(profile, "lifestyle_level", None))
             profile_data = {
-                "weight_kg": profile.weight_kg or 70,
-                "level": profile.level or "beginner",
-                "target_area": profile.target_area or "general fitness"
+                "weight_kg": float(profile_weight) if profile_weight is not None else 70,
+                "level": profile_level,
+                "target_area": getattr(profile, "target_area", None) or "general fitness"
             }
             
             new_plan = generate_weekly_workout_plan(profile_data)

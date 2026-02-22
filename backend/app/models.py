@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text, UniqueConstraint, Boolean
 from sqlalchemy.orm import relationship
 from .database import Base
 from datetime import datetime
@@ -154,6 +154,23 @@ class AdherenceLog(Base):
     extra_foods_json = Column(Text, default="[]")
     water_ml = Column(Integer, default=0)
     water_target_ml = Column(Integer, default=2000)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class WorkoutDailyLog(Base):
+    __tablename__ = "workout_daily_logs"
+    __table_args__ = (
+        UniqueConstraint("user_id", "log_date", name="uq_workout_daily_user_date"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    log_date = Column(String(20), nullable=False, index=True)  # YYYY-MM-DD
+
+    completed = Column(Boolean, default=False)
+    calories_burned = Column(Float, default=0)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
