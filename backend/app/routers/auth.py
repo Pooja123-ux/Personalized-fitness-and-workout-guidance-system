@@ -33,7 +33,7 @@ def signup(payload: UserCreate, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(status_code=500, detail="Failed to create user")
 
-    token = create_token(user.email)
+    token = create_token(str(user.email))
     return {"access_token": token, "token_type": "bearer"}
 
 
@@ -46,8 +46,8 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=401, detail="Email not found")
 
-    if not verify_password(payload.password, user.password_hash):
+    if not verify_password(payload.password, str(user.password_hash)):
         raise HTTPException(status_code=401, detail="Incorrect password")
 
-    token = create_token(user.email)
+    token = create_token(str(user.email))
     return {"access_token": token, "token_type": "bearer"}

@@ -1,310 +1,507 @@
 """
-Dynamic Intelligent Fitness Chatbot Logic with LLaMA 3 Integration
-Can answer ANY question about ANY attribute in ANY dataset without hardcoded patterns
-Enhanced with Meta AI LLaMA 3 via Ollama for intelligent responses
+Dataset-first fitness chatbot logic.
+Answers are generated from available datasets using keyword and column matching.
 """
 
-import pandas as pd
+from __future__ import annotations
+
 import re
-import json
-from typing import Dict, List, Any, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
+from pathlib import Path
+
 import numpy as np
-from datetime import datetime
-import requests
-import asyncio
+import pandas as pd
+
 
 class FitnessChatbot:
-    def __init__(self, use_llama=False, ollama_url="http://localhost:11434"):
-        """Initialize the dynamic chatbot with all datasets and optional LLaMA 3"""
+    def __init__(self, use_llama: bool = False, ollama_url: str = "http://localhost:11434"):
         self.use_llama = use_llama
         self.ollama_url = ollama_url
-        self.llama_model = "llama3"
-        
-        self.datasets = {}
-        self.dataset_metadata = {}
+
+        self.datasets: Dict[str, pd.DataFrame] = {}
+        self.dataset_metadata: Dict[str, Dict[str, Any]] = {}
+        self.stop_words = {
+            "the", "a", "an", "and", "or", "to", "for", "of", "in", "on", "at", "is", "are",
+            "was", "were", "be", "being", "been", "with", "about", "show", "tell", "give",
+            "what", "which", "who", "whom", "where", "when", "why", "how", "me", "my", "i",
+            "you", "we", "they", "it", "this", "that", "these", "those", "please", "can",
+            "could", "would", "should", "do", "does", "did", "any", "all", "from", "by",
+            "into", "than", "then", "also", "have", "has", "had"
+            , "less", "more", "above", "below", "under", "over", "highest", "lowest", "maximum", "minimum"
+        }
+        self.generic_query_tokens = {
+            "exercise", "exercises", "workout", "workouts", "fitness", "food", "foods",
+            "nutrition", "diet", "yoga", "pose", "poses", "best", "good"
+        }
+
         self.load_all_datasets()
         self.build_dataset_metadata()
-        
-        # Test Ollama connection if LLaMA is enabled
-        if self.use_llama:
-            self.test_ollama_connection()
-        
-    def test_ollama_connection(self):
-        """Test connection to Ollama server"""
-        try:
-            response = requests.get(f"{self.ollama_url}/api/tags", timeout=5)
-            if response.status_code == 200:
-                models = response.json().get('models', [])
-                model_names = [model['name'] for model in models]
-                if self.llama_model in model_names:
-                    print(f"LLaMA 3 connected successfully via Ollama")
-                    return True
-                else:
-                    print(f"LLaMA 3 model not found. Available models: {model_names}")
-                    self.use_llama = False
-                    return False
-            else:
-                print(f"Ollama server not responding. Using dataset-only mode.")
-                self.use_llama = False
-                return False
-        except Exception as e:
-            print(f"Could not connect to Ollama: {e}. Using dataset-only mode.")
-            self.use_llama = False
-            return False
 
-    def load_all_datasets(self):
-        """Load all available datasets"""
+    def load_all_datasets(self) -> None:
         try:
-            # Load exercises dataset
-            self.datasets['exercises'] = pd.read_csv('app/exercises.csv')
-            # Load food nutrition dataset
-            self.datasets['food_nutrition'] = pd.read_csv('app/Indian_Food_Nutrition_Processed.csv')
-            # Load diet recommendations dataset
-            self.datasets['diet_recommendations'] = pd.read_csv('app/diet_recommendations_dataset.csv')
-            # Load disease-food nutrition dataset
-            self.datasets['disease_food_nutrition'] = pd.read_csv('app/real_disease_food_nutrition_dataset.csv')
-            # Load yoga poses dataset
-            self.datasets['yoga_poses'] = pd.read_csv('app/final_asan1_1.csv')
+            base = Path(__file__).resolve().parent
+            self.datasets["exercises"] = pd.read_csv(base / "exercises.csv")
+            self.datasets["food_nutrition"] = pd.read_csv(base / "Indian_Food_Nutrition_Processed.csv")
+            self.datasets["diet_recommendations"] = pd.read_csv(base / "diet_recommendations_dataset.csv")
+            self.datasets["disease_food_nutrition"] = pd.read_csv(base / "real_disease_food_nutrition_dataset.csv")
+            self.datasets["yoga_poses"] = pd.read_csv(base / "final_asan1_1.csv")
             print(f"Loaded {len(self.datasets)} datasets")
         except Exception as e:
             print(f"Error loading datasets: {e}")
-            # Create empty datasets as fallback
             self.datasets = {
-                'exercises': pd.DataFrame(),
-                'food_nutrition': pd.DataFrame(),
-                'diet_recommendations': pd.DataFrame(),
-                'disease_food_nutrition': pd.DataFrame(),
-                'yoga_poses': pd.DataFrame()
+                "exercises": pd.DataFrame(),
+                "food_nutrition": pd.DataFrame(),
+                "diet_recommendations": pd.DataFrame(),
+                "disease_food_nutrition": pd.DataFrame(),
+                "yoga_poses": pd.DataFrame(),
             }
-    
-    def build_dataset_metadata(self):
-        """Build metadata for all datasets"""
+
+    def build_dataset_metadata(self) -> None:
+        self.dataset_metadata = {}
         for name, df in self.datasets.items():
+            text_columns = [c for c in df.columns if df[c].dtype == "object"]
+            numeric_columns = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
             self.dataset_metadata[name] = {
-                'columns': df.columns.tolist(),
-                'shape': df.shape,
-                'sample_data': df.head(3).to_dict('records') if not df.empty else []
+                "columns": list(df.columns),
+                "text_columns": text_columns,
+                "numeric_columns": numeric_columns,
+                "num_rows": len(df),
             }
-    
-    def extract_query_intent(self, question: str) -> Dict:
-        """Extract intent from user question"""
-        question_lower = question.lower()
-        
-        # Simple intent extraction
-        intent = {
-            'question': question,
-            'keywords': [],
-            'dataset': None,
-            'attribute': None,
-            'operation': None
-        }
-        
-        # Determine dataset and operation based on keywords
-        if any(word in question_lower for word in ['exercise', 'workout', 'gym']):
-            intent['dataset'] = 'exercises'
-        elif any(word in question_lower for word in ['food', 'calories', 'protein', 'nutrition']):
-            intent['dataset'] = 'food_nutrition'
-        
-        return intent
-    
-    def execute_dynamic_query(self, intent: Dict) -> str:
-        """Execute dynamic query based on intent"""
-        dataset_name = intent.get('dataset')
-        
-        if not dataset_name or dataset_name not in self.datasets:
-            return "I couldn't find specific information for your query. Here's what I can help you with:\n\nAvailable Datasets:\n• Exercises (1324 items)\n• Indian Food Nutrition (1014 items)\n• Diet Recommendations (10 items)\n• Disease-Food Nutrition (500 items)\n• Yoga Poses (62 items)\n\nYou can ask about:\n• Specific items (e.g., 'squats', 'chai', 'diabetes')\n• Categories (e.g., 'chest exercises', 'high protein foods')\n• Comparisons (e.g., 'highest calorie foods')\n• Counts (e.g., 'how many exercises for chest')\n• Attributes (e.g., 'calories in boiled egg')\n• Numeric operations (e.g., 'average protein in foods')\n• Filtering (e.g., 'foods with more than 20g protein')"
-        
-        df = self.datasets[dataset_name]
-        
-        if df.empty:
-            return f"No data available in {dataset_name} dataset."
-        
-        # Simple search implementation
-        question = intent['question'].lower()
-        
-        # Search for relevant items
-        results = []
-        for _, row in df.iterrows():
-            # Simple text matching
-            row_text = ' '.join([str(val).lower() for val in row.values if pd.notna(val)])
-            if any(word in row_text for word in question.split() if len(word) > 2):
-                results.append(row.to_dict())
-        
-        if not results:
-            return f"No results found for '{intent['question']}' in {dataset_name}."
-        
-        # Format results
-        response = f"Found {len(results)} results:\n\n"
-        for i, result in enumerate(results[:5], 1):
-            response += f"{i}. {result.get('name', 'Unknown')}\n"
-            for key, value in result.items():
-                if key != 'name' and pd.notna(value):
-                    response += f"   {key}: {value}\n"
-            response += "\n"
-        
-        return response
-    
-    def answer_question(self, question: str) -> str:
-        """Main method to answer any question about the datasets with dynamic fallback"""
-        if not self.datasets:
-            return "Sorry, I'm having trouble loading my knowledge base. Please try again later."
-        
-        # Extract intent from the question
-        intent = self.extract_query_intent(question)
-        
-        # Try dataset-based answer first
-        dataset_response = self.execute_dynamic_query(intent)
-        
-        # If dataset gives good results, use them
-        if dataset_response and not self.is_dataset_response_empty(dataset_response):
-            return dataset_response
-        
-        # If dataset doesn't have good answer, use dynamic intelligent fallback
-        dynamic_response = self.generate_dynamic_response(question, intent)
-        if dynamic_response:
-            return dynamic_response
-        
-        # Final fallback with helpful general response
-        return self.generate_helpful_fallback(question, intent)
-    
-    def is_dataset_response_empty(self, response: str) -> bool:
-        """Check if dataset response is essentially empty or not helpful"""
-        empty_indicators = [
-            "no results found",
-            "not found in dataset",
-            "no data available",
-            "sorry, i couldn't find",
-            "i don't have information",
-            "no matching results",
-            "i couldn't find specific information for your query",
-            "here's what i can help you with:",
-            "available datasets:",
-            "you can ask about:"
+
+    def extract_query_intent(self, question: str) -> Dict[str, Any]:
+        q = (question or "").strip().lower()
+        base_tokens = [
+            t
+            for t in re.findall(r"[a-z0-9_]+", q)
+            if len(t) > 2 and t not in self.stop_words and not t.isdigit()
         ]
-        
-        response_lower = response.lower()
-        return any(indicator in response_lower for indicator in empty_indicators)
-    
-    def generate_dynamic_response(self, question: str, intent: Dict) -> str:
-        """Generate intelligent responses for common fitness questions not in datasets"""
-        
-        question_lower = question.lower()
-        
-        # Weight management questions
-        if any(keyword in question_lower for keyword in ['lose weight', 'weight loss', 'reduce weight']):
-            return self.generate_weight_loss_advice(question_lower, intent)
-        
-        # Muscle gain questions
-        elif any(keyword in question_lower for keyword in ['gain muscle', 'build muscle', 'muscle growth']):
-            return self.generate_muscle_gain_advice(question_lower, intent)
-        
-        # Workout routine questions
-        elif any(keyword in question_lower for keyword in ['workout routine', 'exercise plan', 'fitness plan']):
-            return self.generate_workout_routine_advice(question_lower, intent)
-        
+        token_set = set(base_tokens)
+        for t in list(base_tokens):
+            if t.endswith("s") and len(t) > 3:
+                token_set.add(t[:-1])
+        tokens = [t for t in token_set if t not in self.generic_query_tokens]
+
+        operation = "search"
+        if any(k in q for k in ["how many", "count", "number of"]):
+            operation = "count"
+        elif any(k in q for k in ["highest", "max", "maximum", "top"]):
+            operation = "max"
+        elif any(k in q for k in ["lowest", "min", "minimum"]):
+            operation = "min"
+        elif any(k in q for k in ["average", "mean", "avg"]):
+            operation = "average"
+        elif any(k in q for k in ["total", "sum"]):
+            operation = "sum"
+
+        numeric_filter = self._extract_numeric_filter(q)
+        domain = self._infer_query_domain(q, tokens)
+
+        return {
+            "question": question,
+            "tokens": tokens,
+            "operation": operation,
+            "numeric_filter": numeric_filter,
+            "domain": domain,
+        }
+
+    def _infer_query_domain(self, q: str, tokens: List[str]) -> str:
+        joined = f"{q} {' '.join(tokens)}"
+        if any(k in joined for k in ["calorie", "protein", "carb", "fat", "fiber", "food", "nutrition", "meal", "vitamin"]):
+            return "nutrition"
+        if any(k in joined for k in ["yoga", "asana", "pose", "flexibility", "meditation"]):
+            return "yoga"
+        if any(k in joined for k in ["exercise", "workout", "gym", "muscle", "training", "strength", "cardio"]):
+            return "exercise"
+        if any(k in joined for k in ["diet", "weight loss", "weight gain", "plan"]):
+            return "diet"
+        if any(k in joined for k in ["disease", "diabetes", "hypertension", "cholesterol", "condition"]):
+            return "health"
+        return "general"
+
+    def _extract_numeric_filter(self, q: str) -> Optional[Tuple[str, float]]:
+        gt_patterns = [r"more than\s+(\d+(\.\d+)?)", r"greater than\s+(\d+(\.\d+)?)", r"above\s+(\d+(\.\d+)?)", r">\s*(\d+(\.\d+)?)"]
+        lt_patterns = [r"less than\s+(\d+(\.\d+)?)", r"below\s+(\d+(\.\d+)?)", r"under\s+(\d+(\.\d+)?)", r"<\s*(\d+(\.\d+)?)"]
+
+        for pat in gt_patterns:
+            m = re.search(pat, q)
+            if m:
+                return ("gt", float(m.group(1)))
+        for pat in lt_patterns:
+            m = re.search(pat, q)
+            if m:
+                return ("lt", float(m.group(1)))
         return None
-    
-    def generate_weight_loss_advice(self, question: str, intent: Dict) -> str:
-        """Generate weight loss advice"""
-        return """For effective weight loss, I recommend a combination of regular exercise and a balanced diet.
 
-Exercise Tips:
-• Aim for 150-300 minutes of moderate-intensity cardio per week
-• Include strength training 2-3 times per week to maintain muscle mass
-• Try activities like brisk walking, cycling, swimming, or jogging
-• Start with 30 minutes daily and gradually increase duration
+    def _dataset_score(self, tokens: List[str], dataset_name: str) -> int:
+        md = self.dataset_metadata.get(dataset_name, {})
+        columns = [c.lower() for c in md.get("columns", [])]
+        score = 0
+        for token in tokens:
+            for col in columns:
+                if token in col:
+                    score += 3
 
-Nutrition Tips:
-• Create a moderate calorie deficit (500-750 calories less than maintenance)
-• Focus on whole foods: lean proteins, vegetables, fruits, and whole grains
-• Drink plenty of water (8-10 glasses daily)
-• Limit processed foods, sugar, and excessive saturated fats
+        df = self.datasets[dataset_name]
+        if df.empty or not tokens:
+            return score
 
-Remember: Sustainable weight loss is typically 0.5-1 kg per week. Consistency is more important than perfection!"""
-    
-    def generate_muscle_gain_advice(self, question: str, intent: Dict) -> str:
-        """Generate muscle gain advice"""
-        return """To build muscle effectively, you need proper resistance training, adequate protein, and sufficient recovery.
+        text_cols = md.get("text_columns", [])[:4]
+        for col in text_cols:
+            sample_values = df[col].dropna().astype(str).head(200).str.lower()
+            for token in tokens:
+                if sample_values.str.contains(re.escape(token), regex=True).any():
+                    score += 2
+        return score
 
-Training Principles:
-• Progressive overload: gradually increase weight, reps, or sets
-• Focus on compound exercises: squats, deadlifts, bench press, rows
-• Train each muscle group 2-3 times per week
-• Aim for 8-12 reps per set for hypertrophy (muscle growth)
-• Rest 60-90 seconds between sets
+    def _choose_candidate_datasets(self, tokens: List[str], domain: str = "general") -> List[str]:
+        domain_bias = {
+            "nutrition": {
+                "food_nutrition": 4,
+                "disease_food_nutrition": 2,
+            },
+            "exercise": {
+                "exercises": 4,
+            },
+            "yoga": {
+                "yoga_poses": 5,
+            },
+            "diet": {
+                "diet_recommendations": 4,
+                "food_nutrition": 1,
+            },
+            "health": {
+                "disease_food_nutrition": 4,
+                "food_nutrition": 1,
+            },
+        }
 
-Nutrition for Muscle Growth:
-• Consume 1.6-2.2g of protein per kg of body weight daily
-• Eat in a slight calorie surplus (300-500 calories above maintenance)
-• Include protein sources: chicken, fish, eggs, dairy, legumes, tofu
-• Time protein intake: have some within 2 hours post-workout
+        scored: List[Tuple[str, int]] = []
+        for name, df in self.datasets.items():
+            if df.empty:
+                continue
+            score = self._dataset_score(tokens, name)
+            score += domain_bias.get(domain, {}).get(name, 0)
+            scored.append((name, score))
 
-Recovery is Crucial:
-• Get 7-9 hours of quality sleep per night
-• Allow 48 hours between training the same muscle group
-• Consider rest days and deload weeks"""
-    
-    def generate_workout_routine_advice(self, question: str, intent: Dict) -> str:
-        """Generate workout routine advice"""
-        return """Here's an effective 30-minute workout routine:
+        scored.sort(key=lambda x: x[1], reverse=True)
+        if not scored:
+            return []
 
-30-Minute Full Body Workout
+        if domain == "nutrition":
+            names = [n for n, _ in scored]
+            if "food_nutrition" in names:
+                scored.sort(
+                    key=lambda x: (
+                        0 if x[0] == "food_nutrition" else 1,
+                        -x[1],
+                    )
+                )
 
-Warm-up (5 minutes):
-• Jumping jacks - 2 minutes
-• Arm circles and leg swings - 3 minutes
+        top_score = scored[0][1]
+        if top_score <= 0:
+            return [n for n, _ in scored]
+        return [n for n, s in scored if s >= max(1, top_score - 2)]
 
-Main Workout (20 minutes):
-• Bodyweight squats - 3 sets of 15 reps
-• Push-ups (modify as needed) - 3 sets of 10 reps
-• Plank hold - 3 sets of 30 seconds
-• Lunges - 3 sets of 12 reps per leg
-• Jumping jacks - 2 minutes
+    def _row_match_scores(self, df: pd.DataFrame, tokens: List[str]) -> pd.Series:
+        if df.empty:
+            return pd.Series(dtype=int)
+        if not tokens:
+            return pd.Series(np.zeros(len(df), dtype=int), index=df.index)
 
-Cool-down (5 minutes):
-• Full body stretches - 5 minutes
+        text_df = df.fillna("").astype(str).apply(lambda col: col.str.lower())
+        scores = pd.Series(np.zeros(len(df), dtype=int), index=df.index)
+        for token in tokens:
+            token_hit = text_df.apply(lambda col: col.str.contains(re.escape(token), regex=True), axis=0).any(axis=1)
+            scores = scores + token_hit.astype(int)
+        return scores
 
-This routine hits all major muscle groups and can be done anywhere!"""
-    
-    def generate_helpful_fallback(self, question: str, intent: Dict) -> str:
-        """Generate a helpful fallback response when no specific answer is available"""
-        return f"""I understand you're asking about: "{question}"
+    def _detect_target_numeric_column(self, question: str, dataset_name: str) -> Optional[str]:
+        md = self.dataset_metadata.get(dataset_name, {})
+        numeric_columns = md.get("numeric_columns", [])
+        if not numeric_columns:
+            return None
 
-While I don't have specific information about this in my current database, I can help with many fitness and nutrition topics!
+        q = question.lower()
+        for col in numeric_columns:
+            if col.lower() in q:
+                return col
 
-I can help you with:
-• Workout routines and exercise plans
-• Nutrition advice and healthy eating
-• Weight loss and muscle gain strategies
-• Beginner fitness guidance
-• Injury prevention tips
-• Motivation and consistency strategies
-• Progress tracking methods
-• Equipment recommendations
+        tokens = [t for t in re.findall(r"[a-z0-9_]+", q) if len(t) > 2]
+        for col in numeric_columns:
+            cl = col.lower()
+            if any(t in cl for t in tokens):
+                return col
 
-Try asking me about:
-• "How to lose weight effectively"
-• "Best exercises for muscle gain"
-• "Healthy meal planning"
-• "Beginner workout routine"
-• "How to stay motivated"
-• "Injury prevention tips"
+        return None
 
-If you have a specific fitness goal or question, feel free to rephrase it and I'll do my best to help you achieve your health and fitness goals!
+    def execute_dynamic_query(self, intent: Dict[str, Any]) -> str:
+        question = intent["question"]
+        tokens = intent["tokens"]
+        operation = intent["operation"]
+        numeric_filter = intent["numeric_filter"]
+        domain = intent.get("domain", "general")
 
-You can also ask me about specific exercises, foods, or nutritional information, and I'll search my extensive database for you."""
+        candidate_datasets = self._choose_candidate_datasets(tokens, domain)
+        if not candidate_datasets:
+            return "No datasets are available right now."
 
-# Global instance
-chatbot_instance = None
+        for dataset_name in candidate_datasets:
+            df = self.datasets[dataset_name]
+            if df.empty:
+                continue
 
-def get_chatbot(use_llama=False, ollama_url="http://localhost:11434"):
-    """Get or create chatbot instance"""
+            target_col = self._detect_target_numeric_column(question, dataset_name)
+            scores = self._row_match_scores(df, tokens)
+            matched = df[scores > 0].copy()
+            matched_scores = scores[scores > 0]
+
+            if matched.empty:
+                # For numeric operations/filters, operate directly on the dataset
+                # when textual row matching is not available.
+                if target_col and target_col in df.columns and pd.api.types.is_numeric_dtype(df[target_col]):
+                    matched = df.copy()
+                    matched["_match_score"] = 1
+                else:
+                    continue
+
+            if not matched_scores.empty:
+                matched = matched.assign(_match_score=matched_scores.loc[matched.index])
+            if "_match_score" not in matched.columns:
+                matched["_match_score"] = 1
+            matched = matched.sort_values("_match_score", ascending=False)
+
+            if numeric_filter and target_col and target_col in matched.columns and pd.api.types.is_numeric_dtype(matched[target_col]):
+                op, value = numeric_filter
+                if op == "gt":
+                    matched = matched[matched[target_col] > value]
+                else:
+                    matched = matched[matched[target_col] < value]
+
+            if matched.empty:
+                continue
+
+            answer = self._format_answer(dataset_name, matched, operation, target_col)
+            return answer
+
+        rule_answer = self._rule_based_general_answer(question, intent)
+        if rule_answer:
+            return rule_answer
+
+        dataset_list = ", ".join(
+            f"{name} ({meta['num_rows']})" for name, meta in self.dataset_metadata.items()
+        )
+        return (
+            f"I could not find a strong keyword match for: '{question}'.\n"
+            f"Available datasets: {dataset_list}.\n"
+            "Try including specific keywords such as exercise names, food names, nutrients, disease names, or yoga pose names."
+        )
+
+    def _rule_based_general_answer(self, question: str, intent: Dict[str, Any]) -> Optional[str]:
+        q = (question or "").lower()
+        domain = intent.get("domain", "general")
+
+        bmi_answer = self._rule_based_bmi_answer(q)
+        if bmi_answer:
+            return bmi_answer
+
+        if any(k in q for k in ["calorie deficit", "fat loss", "weight loss"]):
+            return (
+                "Source: rule_based\n"
+                "For weight loss, keep a moderate calorie deficit (about 300-500 kcal/day), "
+                "eat high-protein meals, and combine strength training with regular cardio."
+            )
+
+        if any(k in q for k in ["muscle gain", "build muscle", "hypertrophy"]):
+            return (
+                "Source: rule_based\n"
+                "For muscle gain, use progressive overload, train each muscle 2-3 times/week, "
+                "and consume enough protein (roughly 1.6-2.2 g/kg body weight/day)."
+            )
+
+        if any(k in q for k in ["workout plan", "workout routine", "exercise routine"]):
+            return (
+                "Source: rule_based\n"
+                "Simple weekly structure: 3-4 strength sessions, 2-3 cardio sessions, "
+                "1-2 lighter recovery days, and gradual progression in reps/weight."
+            )
+
+        if any(k in q for k in ["exercise", "workout", "training", "gym"]) and domain == "exercise":
+            return (
+                "Source: rule_based\n"
+                "Base your workouts on compound patterns: squat, hinge, push, pull, and core. "
+                "Track reps/sets and increase load gradually while maintaining form."
+            )
+
+        if "fitness" in q:
+            return (
+                "Source: rule_based\n"
+                "General fitness approach: 150+ minutes of weekly activity, 2-4 strength sessions, "
+                "balanced nutrition, consistent sleep, and progressive training over time."
+            )
+
+        if any(k in q for k in ["calories", "kcal", "maintenance calories", "tdee"]):
+            return (
+                "Source: rule_based\n"
+                "Calorie targets: maintain near maintenance kcal, lose weight at ~300-500 kcal below maintenance, "
+                "and gain muscle at ~200-300 kcal above maintenance."
+            )
+
+        if any(k in q for k in ["food", "foods", "nutrition", "healthy eating", "diet"]):
+            return (
+                "Source: rule_based\n"
+                "Prioritize whole foods: lean protein, vegetables, fruits, whole grains, legumes, nuts/seeds, "
+                "and adequate hydration. Limit ultra-processed foods and sugary drinks."
+            )
+
+        if any(k in q for k in ["health", "wellness", "healthy lifestyle", "preventive health"]):
+            return (
+                "Source: rule_based\n"
+                "Health basics: regular activity, balanced nutrition, 7-9 hours sleep, stress management, "
+                "and routine medical checkups."
+            )
+
+        return None
+
+    def _rule_based_bmi_answer(self, q: str) -> Optional[str]:
+        if "bmi" not in q:
+            return None
+
+        weight_match = re.search(r"(\d+(?:\.\d+)?)\s*kg", q)
+        height_m_match = re.search(r"(\d+(?:\.\d+)?)\s*m(?:eter|etre|)\b", q)
+        height_cm_match = re.search(r"(\d+(?:\.\d+)?)\s*cm", q)
+
+        if not weight_match:
+            return (
+                "Source: rule_based\n"
+                "BMI formula: BMI = weight(kg) / (height in meters)^2. "
+                "Share your weight (kg) and height (cm or m) and I can calculate it."
+            )
+
+        weight = float(weight_match.group(1))
+        height_m = None
+        if height_m_match:
+            height_m = float(height_m_match.group(1))
+        elif height_cm_match:
+            height_m = float(height_cm_match.group(1)) / 100.0
+
+        if not height_m or height_m <= 0:
+            return (
+                "Source: rule_based\n"
+                "I found your weight but not height. "
+                "Provide height in cm or meters to calculate BMI."
+            )
+
+        bmi = weight / (height_m * height_m)
+        if bmi < 18.5:
+            category = "Underweight"
+        elif bmi < 25:
+            category = "Normal weight"
+        elif bmi < 30:
+            category = "Overweight"
+        else:
+            category = "Obesity"
+
+        return (
+            "Source: rule_based\n"
+            f"BMI: {bmi:.1f}\n"
+            f"Category: {category}"
+        )
+
+    def _format_answer(
+        self,
+        dataset_name: str,
+        matched: pd.DataFrame,
+        operation: str,
+        target_col: Optional[str],
+    ) -> str:
+        view = matched.drop(columns=["_match_score"], errors="ignore")
+
+        if operation == "count":
+            return f"Source: {dataset_name}\nMatch count: {len(view)}"
+
+        if operation in {"max", "min", "average", "sum"} and target_col and target_col in view.columns:
+            if not pd.api.types.is_numeric_dtype(view[target_col]):
+                return f"Source: {dataset_name}\nMatched {len(view)} rows, but '{target_col}' is not numeric."
+
+            values = view[target_col].dropna()
+            if values.empty:
+                return f"Source: {dataset_name}\nMatched {len(view)} rows, but no numeric values found in '{target_col}'."
+
+            if operation == "max":
+                idx = values.idxmax()
+                row = view.loc[idx]
+                return self._format_single_row(dataset_name, row, f"Highest {target_col}")
+            if operation == "min":
+                idx = values.idxmin()
+                row = view.loc[idx]
+                return self._format_single_row(dataset_name, row, f"Lowest {target_col}")
+            if operation == "average":
+                return f"Source: {dataset_name}\nAverage {target_col}: {values.mean():.2f} (from {len(values)} rows)"
+            if operation == "sum":
+                return f"Source: {dataset_name}\nTotal {target_col}: {values.sum():.2f} (from {len(values)} rows)"
+
+        top = view.head(5)
+        cols = [c for c in top.columns if c != "_match_score"][:6]
+        lines = [f"Source: {dataset_name}", f"Matched rows: {len(view)}", ""]
+        for i, (_, row) in enumerate(top.iterrows(), start=1):
+            lines.append(f"{i}.")
+            for c in cols:
+                val = row.get(c)
+                if pd.notna(val):
+                    lines.append(f"   {c}: {val}")
+            lines.append("")
+        return "\n".join(lines).strip()
+
+    def _format_single_row(self, dataset_name: str, row: pd.Series, title: str) -> str:
+        lines = [f"Source: {dataset_name}", title, ""]
+        for c, v in row.items():
+            if c == "_match_score":
+                continue
+            if pd.notna(v):
+                lines.append(f"{c}: {v}")
+        return "\n".join(lines)
+
+    def answer_question(self, question: str) -> str:
+        if not self.datasets:
+            return "Knowledge base is not available right now."
+        intent = self.extract_query_intent(question)
+        if self._should_prefer_rule_based(question, intent):
+            rule_answer = self._rule_based_general_answer(question, intent)
+            if rule_answer:
+                return rule_answer
+        return self.execute_dynamic_query(intent)
+
+    def _should_prefer_rule_based(self, question: str, intent: Dict[str, Any]) -> bool:
+        q = (question or "").lower()
+        if "bmi" in q:
+            return True
+
+        guidance_phrases = [
+            "tips", "how to", "should i", "routine", "plan", "beginner", "general",
+            "build muscle", "muscle gain", "weight loss", "calories should i eat",
+            "healthy lifestyle"
+        ]
+        if any(p in q for p in guidance_phrases):
+            return True
+
+        # If query has very few specific tokens, prefer rule-based guidance.
+        tokens = intent.get("tokens", [])
+        if len(tokens) <= 1 and intent.get("operation") == "search":
+            return True
+
+        return False
+
+
+chatbot_instance: Optional[FitnessChatbot] = None
+
+
+def get_chatbot(use_llama: bool = False, ollama_url: str = "http://localhost:11434") -> FitnessChatbot:
     global chatbot_instance
     if chatbot_instance is None:
         chatbot_instance = FitnessChatbot(use_llama=use_llama, ollama_url=ollama_url)
     return chatbot_instance
 
-def answer_fitness_question(question: str, use_llama=False, ollama_url="http://localhost:11434") -> str:
-    """Main function to answer any fitness-related question dynamically with LLaMA 3 option"""
+
+def answer_fitness_question(question: str, use_llama: bool = False, ollama_url: str = "http://localhost:11434") -> str:
     bot = get_chatbot(use_llama=use_llama, ollama_url=ollama_url)
     return bot.answer_question(question)

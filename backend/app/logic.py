@@ -248,7 +248,7 @@ def suggest_for_target(df: pd.DataFrame, meal_cal: float, topn: int = 10, user_f
 
     # Identify high protein foods (e.g., > 10g per 100g or specific keywords)
     df2["is_high_protein"] = df2["food"].str.lower().apply(lambda f: 1 if any(item in f for item in ["egg", "chicken", "fish", "mutton", "meat", "prawn", "shrimp", "paneer", "tofu", "soy", "dal", "lentil", "chana", "moong", "sprouts", "greek yogurt", "whey", "milk", "curd", "yogurt", "cheese", "besan", "gram flour", "rajma", "lobiya"]) else 0)
-    df2["protein_per_100g"] = pd.to_numeric(df2.get("protein", 0), errors="coerce").fillna(0)
+    df2["protein_per_100g"] = pd.to_numeric(df2.get("protein", pd.Series([0] * len(df2))), errors="coerce").fillna(0)
     df2["is_high_protein"] = ((df2["is_high_protein"] == 1) | (df2["protein_per_100g"] > 8.0)).astype(int) # Lowered threshold to 8g
 
     fruits = ["apple", "banana", "orange", "grape", "mango", "pineapple", "strawberry", "kiwi", "peach", "pear"]
@@ -345,7 +345,7 @@ def suggest_for_target(df: pd.DataFrame, meal_cal: float, topn: int = 10, user_f
         df2["score"] += df2.get("protein", 0) * 0.1
 
     # Sort final results by score (lower is better) and protein content
-    df2["protein_score"] = df2.get("protein", 0).astype(float) * -10.0 # Prioritize high protein in final sort
+    df2["protein_score"] = pd.to_numeric(df2.get("protein", pd.Series([0] * len(df2))), errors="coerce").astype(float) * -10.0 # Prioritize high protein in final sort
     df2 = df2.sort_values(by=["score", "protein_score", "serving_g"])
 
     if df2.empty:
@@ -458,7 +458,7 @@ try:
         if col in df_diet_rec_features.columns:
             from sklearn.preprocessing import LabelEncoder
             encoder = LabelEncoder()
-            df_diet_rec_features[col] = encoder.fit_transform(df_diet_rec_features[col].astype(str))
+            df_diet_rec_features[col] = encoder.fit_transform(df_diet_rec_features[col].astype(str).fillna('').astype(str))
             encoders[col] = encoder
 
     # Scale features
@@ -688,7 +688,7 @@ def filter_foods(diet_type: str, diseases: str):
     diseases_list = [d.strip() for d in diseases.split(",") if d.strip()] if diseases else []
     return filter_foods_by_diseases(df_food, diseases_list, diet_type)
 
-def ml_diet_recommendation(bmi, motive, diet_type, diseases, user_meals: Optional[Dict[str, str]] = None, daily_calories: float = None, topn: int = 5):
+def ml_diet_recommendation(bmi: float, motive: str, diet_type: str, diseases: str, user_meals: Optional[Dict[str, str]] = None, daily_calories: Optional[float] = None, topn: int = 5):
     """
     Recommend foods for meals. Strategy:
     - Filter foods by diet_type and diseases using disease-specific recommendations
@@ -769,7 +769,7 @@ def ml_diet_recommendation(bmi, motive, diet_type, diseases, user_meals: Optiona
             if not mask.empty:
                 # Prioritize protein in matching alternatives too
                 mask = mask.copy()
-                mask["protein_val"] = pd.to_numeric(mask.get("protein", 0), errors="coerce").fillna(0)
+                mask["protein_val"] = pd.to_numeric(mask.get("protein", pd.Series([0] * len(mask))), errors="coerce").fillna(0)
                 mask = mask.sort_values(by="protein_val", ascending=False)
                 for _, r in mask.head(topn).iterrows():
                     cal100 = r.get("calories")
@@ -786,7 +786,7 @@ def ml_diet_recommendation(bmi, motive, diet_type, diseases, user_meals: Optiona
             # try to note used index if possible
             try:
                 if chosen.name is not None:
-                    used_idx.add(int(chosen.name))
+                    used_idx.add(int(str(chosen.name)))
             except Exception:
                 pass
             continue
@@ -807,7 +807,7 @@ def ml_diet_recommendation(bmi, motive, diet_type, diseases, user_meals: Optiona
                 row = filtered.iloc[int(fid) % len(filtered)]
             # avoid duplicates across meals
             try:
-                ridx = int(row.name) if row.name is not None else None
+                ridx = int(str(row.name)) if row.name is not None else None
             except Exception:
                 ridx = None
             if ridx is not None and ridx in used_idx:
@@ -830,7 +830,7 @@ def ml_diet_recommendation(bmi, motive, diet_type, diseases, user_meals: Optiona
             
             # Sort these nearest neighbors by protein content to provide better alternatives
             alts_df = pd.DataFrame(alts_rows)
-            alts_df["protein_val"] = pd.to_numeric(alts_df.get("protein", 0), errors="coerce").fillna(0)
+            alts_df["protein_val"] = pd.to_numeric(alts_df.get("protein", pd.Series([0] * len(alts_df))), errors="coerce").fillna(0)
             alts_df = alts_df.sort_values(by="protein_val", ascending=False)
 
             alts = []
@@ -898,7 +898,7 @@ def normalize_level(level: str) -> str:
         return "intermediate"
     return "advanced"
 
-def get_exercises(level: str, target_count: int = 12, target_area: str = None) -> List[Dict]:
+def get_exercises(level: str, target_count: int = 12, target_area: Optional[str] = None) -> List[Dict]:
     """Return a limited, diverse set of exercises for the user's level.
 
     Strategy:
@@ -1023,7 +1023,7 @@ def get_exercises(level: str, target_count: int = 12, target_area: str = None) -
             link = f"https://workoutguru.fit/exercises/{_slugify(name_val)}/"
         # infer repetitions/sets when not explicit
         reps = ""
-        if isinstance(rec.get("repetitions"), str) and rec.get("repetitions").strip():
+        if isinstance(rec.get("repetitions"), str) and rec.get("repetitions") and rec.get("repetitions").strip():
             reps = rec.get("repetitions").strip()
         elif pd.notna(rec.get("reps")) and str(rec.get("reps")).strip():
             reps = str(rec.get("reps")).strip()
@@ -1087,9 +1087,9 @@ except Exception:
 
 df_yoga.columns = [c.strip() for c in df_yoga.columns]
 
-def get_yoga(level: str, target_area: str = None, target_count: int = 8) -> List[Dict]:
+def get_yoga(level: str, target_area: Optional[str] = None, target_count: int = 8) -> List[Dict]:
     lvl = normalize_level(level)
-    lvl_mask = df_yoga[df_yoga.get("Level", "").astype(str).str.lower() == lvl]
+    lvl_mask = df_yoga[df_yoga.get("Level", pd.Series([""] * len(df_yoga))).astype(str).str.lower() == lvl]
     source = lvl_mask if not lvl_mask.empty else df_yoga
 
     ta = (target_area or "").strip().lower() if target_area is not None else ""
@@ -1409,7 +1409,7 @@ def generate_recommendations(user_data: Dict) -> Dict:
 # =========================================================
 def answer_from_datasets(message: Optional[str]) -> Dict[str, str]:
     """Answer questions based on available datasets (food nutrition, diseases, etc.)."""
-    msg_lower = message.lower().strip()
+    msg_lower = message.lower().strip() if message else ""
 
     # Check for food-related queries
     food_keywords = ["calories", "nutrition", "protein", "carbs", "fat", "kcal", "food", "eat", "meal"]

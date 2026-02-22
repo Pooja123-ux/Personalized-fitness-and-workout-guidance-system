@@ -1,118 +1,85 @@
 import { useState, useEffect } from 'react'
-import api from '../api'
 
 interface WeeklyWorkoutPlan {
-  day: string;
-  target_area: string;
-  exercises: Array<{
-    id: string;
-    name: string;
-    bodyPart: string;
-    equipment: string;
-    gifUrl: string;
-    target: string;
-    secondaryMuscles: string[];
-    instructions: string[];
-  }>;
-  total_duration: string;
-  calories_burned: number;
+  day: string
+  target_area: string
+  exercises: ExerciseWithSets[]
+  total_duration: string
+  calories_burned: number
 }
 
 interface ExerciseWithSets {
-  id: string;
-  name: string;
-  bodyPart: string;
-  equipment: string;
-  gifUrl: string;
-  target: string;
-  secondaryMuscles: string[];
-  instructions: string[];
-  sets: number;
-  reps: string;
-  rest_time: string;
+  id: string
+  name: string
+  bodyPart: string
+  equipment: string
+  gifUrl: string
+  target: string
+  secondaryMuscles: string[]
+  instructions: string[]
+  sets: number
+  reps: string
+  rest_time: string
 }
 
 function WeeklyWorkoutPlanDisplay() {
   const [weeklyPlan, setWeeklyPlan] = useState<WeeklyWorkoutPlan[]>([])
   const [loading, setLoading] = useState(true)
-  const [selectedDay, setSelectedDay] = useState<string>('')
-  const [exercisesData, setExercisesData] = useState<any[]>([])
-
-  const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-  const targetAreas = ['Upper Body', 'Lower Body', 'Core', 'Full Body', 'Cardio', 'Flexibility', 'Rest Day']
+  const [selectedDay, setSelectedDay] = useState<string>('Monday')
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    fetchWeeklyWorkoutPlan()
     fetchExercisesData()
   }, [])
 
   const fetchExercisesData = async () => {
     try {
-      // Load exercises from local JSON file
+      setLoading(true)
       const response = await fetch('/exercises.json')
       const data = await response.json()
-      setExercisesData(data)
-      console.log(`Loaded ${data.length} exercises from dataset`)
-      console.log('Sample exercise:', data[0])
-      
-      // Generate plan after data is loaded
       const generatedPlan = generateWeeklyWorkoutPlanFromDataset(data)
-      console.log('Generated plan:', generatedPlan)
       setWeeklyPlan(generatedPlan)
       setSelectedDay(generatedPlan[0]?.day || 'Monday')
-    } catch (error) {
-      console.error('Error fetching exercises data:', error)
-    }
-  }
-
-  const fetchWeeklyWorkoutPlan = async () => {
-    try {
-      setLoading(true)
-      // Plan will be generated after exercises data is loaded
-    } catch (error) {
-      console.error('Error fetching weekly workout plan:', error)
+      setError(null)
+    } catch (err) {
+      console.error('Error fetching exercises data:', err)
+      setError('Could not load workout recommendations right now.')
     } finally {
       setLoading(false)
     }
   }
 
-  const generateWeeklyWorkoutPlanFromDataset = (exercisesData: any[]): WeeklyWorkoutPlan[] => {
-    // Map body parts to target areas
+  const generateWeeklyWorkoutPlanFromDataset = (dataset: any[]): WeeklyWorkoutPlan[] => {
     const bodyPartToTargetArea: { [key: string]: string } = {
-      'waist': 'Core',
+      waist: 'Core',
       'upper legs': 'Lower Body',
       'lower legs': 'Lower Body',
-      'back': 'Upper Body',
-      'chest': 'Upper Body',
+      back: 'Upper Body',
+      chest: 'Upper Body',
       'upper arms': 'Upper Body',
       'lower arms': 'Upper Body',
-      'cardio': 'Cardio'
+      cardio: 'Cardio'
     }
 
-    // Generate reps/sets based on target area
     const getRepsAndSets = (targetArea: string) => {
       const repsSets: { [key: string]: { reps: string; sets: number; rest: string } } = {
         'Upper Body': { reps: '10-12', sets: 4, rest: '60s' },
         'Lower Body': { reps: '12-15', sets: 4, rest: '90s' },
-        'Core': { reps: '15-20', sets: 3, rest: '45s' },
+        Core: { reps: '15-20', sets: 3, rest: '45s' },
         'Full Body': { reps: '8-12', sets: 4, rest: '90s' },
-        'Cardio': { reps: '30-45 seconds', sets: 4, rest: '30s' },
-        'Flexibility': { reps: '30 seconds hold', sets: 3, rest: '15s' }
+        Cardio: { reps: '30-45 sec', sets: 4, rest: '30s' },
+        Flexibility: { reps: '30 sec hold', sets: 3, rest: '15s' }
       }
       return repsSets[targetArea] || { reps: '10-12', sets: 3, rest: '60s' }
     }
 
-    // Group exercises by body part
-    const exercisesByBodyPart = exercisesData.reduce((acc, exercise) => {
+    const exercisesByBodyPart = dataset.reduce((acc, exercise) => {
       const bodyPart = exercise.bodyPart
-      if (!acc[bodyPart]) {
-        acc[bodyPart] = []
-      }
+      if (!acc[bodyPart]) acc[bodyPart] = []
       acc[bodyPart].push(exercise)
       return acc
     }, {} as { [key: string]: any[] })
 
-    // Generate weekly plan with balanced target areas
     const weeklySchedule = [
       { day: 'Monday', target_area: 'Upper Body' },
       { day: 'Tuesday', target_area: 'Lower Body' },
@@ -123,462 +90,272 @@ function WeeklyWorkoutPlanDisplay() {
       { day: 'Sunday', target_area: 'Rest Day' }
     ]
 
-    return weeklySchedule.map(schedule => {
+    return weeklySchedule.map((schedule) => {
       const targetArea = schedule.target_area
       let exercises: ExerciseWithSets[] = []
 
       if (targetArea === 'Rest Day') {
         exercises = []
       } else if (targetArea === 'Full Body') {
-        // For Full Body, mix exercises from all body parts
-        const allBodyParts = Object.keys(bodyPartToTargetArea)
-        allBodyParts.forEach(bodyPart => {
-          if (exercisesByBodyPart[bodyPart]) {
-            exercises = exercises.concat(exercisesByBodyPart[bodyPart].slice(0, 1)) // Take 1 exercise per body part
-          }
+        Object.keys(bodyPartToTargetArea).forEach((bodyPart) => {
+          if (exercisesByBodyPart[bodyPart]) exercises = exercises.concat(exercisesByBodyPart[bodyPart].slice(0, 1))
         })
-        // Remove duplicates and limit to 6 exercises
-        exercises = exercises.filter((exercise, index, self) => 
-          index === self.findIndex(e => e.id === exercise.id)
-        ).slice(0, 6)
+        exercises = exercises.filter((exercise, index, self) => index === self.findIndex((e) => e.id === exercise.id)).slice(0, 6)
       } else if (targetArea === 'Flexibility') {
-        // For Flexibility, find stretching exercises
         const flexibilityKeywords = ['stretch', 'yoga', 'mobility', 'flex']
-        exercises = exercisesData.filter(exercise => 
-          flexibilityKeywords.some(keyword => 
-            exercise.name.toLowerCase().includes(keyword) || 
-            exercise.target.toLowerCase().includes(keyword)
+        exercises = dataset
+          .filter((exercise) =>
+            flexibilityKeywords.some(
+              (keyword) => exercise.name.toLowerCase().includes(keyword) || exercise.target.toLowerCase().includes(keyword)
+            )
           )
-        ).slice(0, 6)
+          .slice(0, 6)
       } else {
-        // Find relevant body parts for this target area
-        const relevantBodyParts = Object.keys(bodyPartToTargetArea).filter(
-          bodyPart => bodyPartToTargetArea[bodyPart] === targetArea
-        )
-
-        // Get exercises from relevant body parts
-        relevantBodyParts.forEach(bodyPart => {
-          if (exercisesByBodyPart[bodyPart]) {
-            exercises = exercises.concat(exercisesByBodyPart[bodyPart].slice(0, 3)) // Take 3 exercises per body part
-          }
+        const relevantBodyParts = Object.keys(bodyPartToTargetArea).filter((bodyPart) => bodyPartToTargetArea[bodyPart] === targetArea)
+        relevantBodyParts.forEach((bodyPart) => {
+          if (exercisesByBodyPart[bodyPart]) exercises = exercises.concat(exercisesByBodyPart[bodyPart].slice(0, 3))
         })
-
-        // Remove duplicates and limit to reasonable number
-        exercises = exercises.filter((exercise, index, self) => 
-          index === self.findIndex(e => e.id === exercise.id)
-        ).slice(0, 6) // Limit to 6 exercises per day
+        exercises = exercises.filter((exercise, index, self) => index === self.findIndex((e) => e.id === exercise.id)).slice(0, 6)
       }
 
-      // Add reps and sets to exercises
       const repsSets = getRepsAndSets(targetArea)
-      exercises = exercises.map(exercise => ({
-        ...exercise,
-        sets: repsSets.sets,
-        reps: repsSets.reps,
-        rest_time: repsSets.rest
-      }))
+      exercises = exercises.map((exercise) => ({ ...exercise, sets: repsSets.sets, reps: repsSets.reps, rest_time: repsSets.rest }))
 
+      const totalDuration = calculateRealisticDuration(targetArea)
       return {
         day: schedule.day,
-        target_area: schedule.target_area,
+        target_area: targetArea,
         exercises,
-        total_duration: calculateRealisticDuration(targetArea, exercises.length),
-        calories_burned: targetArea === 'Rest Day' ? 0 : Math.floor(parseInt(calculateRealisticDuration(targetArea, exercises.length)) * 8)
+        total_duration: totalDuration,
+        calories_burned: targetArea === 'Rest Day' ? 0 : Math.floor(parseInt(totalDuration, 10) * 8)
       }
     })
   }
 
-  const calculateRealisticDuration = (targetArea: string, exerciseCount: number): string => {
-    // Base duration in minutes for each target area
+  const calculateRealisticDuration = (targetArea: string): string => {
     const baseDurations: { [key: string]: number } = {
       'Upper Body': 35,
       'Lower Body': 40,
-      'Core': 35,
+      Core: 35,
       'Full Body': 35,
-      'Cardio': 30,
-      'Flexibility': 30,
-      'Rest Day': 0  // Rest Day is 0 minutes
+      Cardio: 30,
+      Flexibility: 30,
+      'Rest Day': 0
     }
-    
-    // Add variation based on exercise count
     const baseDuration = baseDurations[targetArea] || 30
-    const variation = Math.floor(Math.random() * 10) - 5 // ±5 minutes variation
+    const variation = Math.floor(Math.random() * 10) - 5
     const totalMinutes = targetArea === 'Rest Day' ? 0 : Math.max(20, Math.min(45, baseDuration + variation))
-    
     return `${totalMinutes}m`
   }
 
-  const getTargetAreaIcon = (targetArea: string) => {
-    const icons: { [key: string]: string } = {
-      'Upper Body': '💪',
-      'Lower Body': '🦵',
-      'Core': '🎯',
-      'Full Body': '🏋️',
-      'Cardio': '🏃',
-      'Flexibility': '🧘',
-      'Rest Day': '😴'
+  const getAreaAccent = (targetArea: string) => {
+    const map: { [key: string]: { icon: string; bg: string; border: string; text: string } } = {
+      'Upper Body': { icon: 'UP', bg: '#eef2ff', border: '#c7d2fe', text: '#3730a3' },
+      'Lower Body': { icon: 'LOW', bg: '#ecfeff', border: '#99f6e4', text: '#115e59' },
+      Core: { icon: 'CORE', bg: '#fffbeb', border: '#fde68a', text: '#92400e' },
+      'Full Body': { icon: 'FULL', bg: '#ecfccb', border: '#bef264', text: '#3f6212' },
+      Cardio: { icon: 'HIIT', bg: '#fee2e2', border: '#fca5a5', text: '#991b1b' },
+      Flexibility: { icon: 'MOB', bg: '#f0fdf4', border: '#86efac', text: '#166534' },
+      'Rest Day': { icon: 'REST', bg: '#f8fafc', border: '#cbd5e1', text: '#334155' }
     }
-    return icons[targetArea] || '🏋️'
+    return map[targetArea] || map['Full Body']
   }
 
-  const getDifficultyColor = (target: string) => {
-    const colors: { [key: string]: string } = {
-      'abs': '#10b981',
-      'hip flexors': '#10b981',
-      'obliques': '#10b981',
-      'quadriceps': '#10b981',
-      'hamstrings': '#10b981',
-      'glutes': '#10b981',
-      'lats': '#10b981',
-      'biceps': '#10b981',
-      'triceps': '#10b981',
-      'shoulders': '#10b981',
-      'forearms': '#10b981',
-      'pectorals': '#10b981',
-      'cardiovascular system': '#f59e0b',
-      'calves': '#10b981',
-      'ankle stabilizers': '#10b981',
-      'rhomboids': '#10b981',
-      'spine': '#10b981',
-      'adductors': '#10b981',
-      'core': '#10b981'
-    }
-    return colors[target] || '#6b7280'
-  }
+  const selectedDayPlan = weeklyPlan.find((plan) => plan.day === selectedDay)
 
-  const getMuscleGroupColor = (muscle: string) => {
-    const colors: { [key: string]: string } = {
-      'Chest': '#ef4444',
-      'Back': '#3b82f6',
-      'Shoulders': '#8b5cf6',
-      'Biceps': '#ec4899',
-      'Triceps': '#f59e0b',
-      'Quads': '#10b981',
-      'Glutes': '#f97316',
-      'Hamstrings': '#06b6d4',
-      'Calves': '#84cc16',
-      'Abs': '#dc2626',
-      'Obliques': '#7c3aed',
-      'Lower Abs': '#a855f7',
-      'Core': '#9333ea',
-      'Hips': '#ea580c',
-      'Legs': '#059669',
-      'Arms': '#0891b2',
-      'Full Body': '#6366f1',
-      'Ankle': '#0c4a6e',
-      'Hip Flexors': '#fbbf24'
-    }
-    return colors[muscle] || '#6b7280'
-  }
+  if (loading) return <div style={{ padding: '28px', textAlign: 'center', color: '#64748b' }}>Loading workout recommendations...</div>
 
-  if (loading) {
+  if (error) {
     return (
-      <div style={{ padding: '20px', textAlign: 'center' }}>
-        <div style={{ fontSize: '1.2rem', fontWeight: 600, color: '#64748b' }}>Loading weekly workout plan...</div>
+      <div style={{ padding: '28px', textAlign: 'center' }}>
+        <div style={{ marginBottom: 12, color: '#b91c1c' }}>{error}</div>
+        <button
+          onClick={fetchExercisesData}
+          style={{ border: 'none', borderRadius: 10, background: '#0f766e', color: 'white', padding: '10px 14px', fontWeight: 700 }}
+        >
+          Retry
+        </button>
       </div>
     )
   }
 
-  const selectedDayPlan = weeklyPlan.find(plan => plan.day === selectedDay)
-
   return (
-    <div style={{ padding: '20px', fontFamily: 'Plus Jakarta Sans, sans-serif' }}>
+    <div className="workout-reco">
       <style>{`
-        .weekly-workout-container {
-          max-width: 100%;
-          margin: 0 auto;
-        }
-        
-        .day-selector {
-          display: flex;
-          gap: 8px;
-          margin-bottom: 25px;
-          overflow-x: auto;
-          padding: 5px;
-        }
-        
-        .day-btn {
-          flex: 1;
-          min-width: 100px;
-          padding: 12px 8px;
-          border: none;
+        .workout-reco { font-family: 'Sora', sans-serif; }
+        .workout-days { display: grid; grid-template-columns: repeat(7, minmax(80px, 1fr)); gap: 8px; margin-bottom: 12px; }
+        .workout-day-btn {
+          border: 1px solid #dbe3ef;
+          background: #f8fafc;
           border-radius: 12px;
-          background: #f1f5f9;
-          color: #64748b;
-          font-weight: 600;
-          font-size: 0.85rem;
-          cursor: pointer;
-          transition: all 0.2s;
-          text-align: center;
-        }
-        
-        .day-btn.active {
-          background: #4361ee;
-          color: white;
-          box-shadow: 0 4px 12px rgba(67, 97, 238, 0.3);
-        }
-        
-        .day-btn:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-        
-        .workout-summary {
-          background: linear-gradient(135deg, #4361ee 0%, #7209b7 100%);
-          color: white;
-          padding: 25px;
-          border-radius: 20px;
-          margin-bottom: 25px;
-          box-shadow: 0 10px 25px rgba(67, 97, 238, 0.2);
-        }
-        
-        .exercise-card {
-          background: white;
-          border-radius: 16px;
-          padding: 20px;
-          margin-bottom: 15px;
-          border: 1px solid #e2e8f0;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-          transition: all 0.3s;
-        }
-        
-        .exercise-card:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-        }
-        
-        .muscle-group-tag {
-          display: inline-block;
-          padding: 4px 8px;
-          border-radius: 6px;
-          font-size: 0.7rem;
-          font-weight: 600;
-          color: white;
-          margin: 2px;
-        }
-        
-        .equipment-tag {
-          display: inline-block;
-          padding: 3px 8px;
-          border-radius: 4px;
-          font-size: 0.65rem;
-          font-weight: 600;
-          background: #f1f5f9;
-          color: #475569;
-          margin: 2px;
-        }
-        
-        .difficulty-badge {
-          display: inline-block;
-          padding: 4px 10px;
-          border-radius: 8px;
-          font-size: 0.7rem;
+          padding: 8px;
+          font-size: 0.76rem;
           font-weight: 700;
-          color: white;
-          text-transform: uppercase;
+          color: #334155;
+          cursor: pointer;
+          transition: all 160ms ease;
+        }
+        .workout-day-btn.active {
+          transform: translateY(-1px);
+          background: #0f766e;
+          border-color: #0f766e;
+          color: #fff;
+          box-shadow: 0 12px 22px -18px #0f766e;
+        }
+        .workout-head {
+          border: 1px solid #dbe3ef;
+          background: linear-gradient(120deg, #ffffff 0%, #f8fafc 100%);
+          border-radius: 16px;
+          padding: 14px;
+          margin-bottom: 12px;
+        }
+        .exercise-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+        .exercise-card {
+          border: 1px solid #dbe3ef;
+          border-radius: 16px;
+          background: #fff;
+          padding: 14px;
+        }
+        .exercise-actions { display: flex; gap: 8px; margin-top: 12px; }
+        .btn-link, .btn-ai {
+          border: none;
+          border-radius: 10px;
+          padding: 9px 10px;
+          font-size: 0.76rem;
+          font-weight: 700;
+          cursor: pointer;
+          text-decoration: none;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          white-space: nowrap;
+        }
+        .btn-link { background: #ecfeff; color: #155e75; border: 1px solid #a5f3fc; }
+        .btn-ai { background: #0f766e; color: #fff; }
+        @media (max-width: 980px) {
+          .workout-days { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+          .exercise-grid { grid-template-columns: 1fr; }
         }
       `}</style>
 
-      <div className="weekly-workout-container">
-        <h2 style={{ margin: '0 0 20px', fontSize: '1.5rem', fontWeight: 800, color: '#1e293b', textAlign: 'center' }}>
-          
-        </h2>
-
-        <div className="day-selector">
-          {weeklyPlan.map((plan) => (
+      <div className="workout-days">
+        {weeklyPlan.map((plan) => {
+          const accent = getAreaAccent(plan.target_area)
+          return (
             <button
               key={plan.day}
-              className={`day-btn ${selectedDay === plan.day ? 'active' : ''}`}
+              className={`workout-day-btn ${selectedDay === plan.day ? 'active' : ''}`}
               onClick={() => setSelectedDay(plan.day)}
+              title={`${plan.day} - ${plan.target_area}`}
             >
-              <div style={{ fontSize: '1.2rem', marginBottom: '4px' }}>
-                {getTargetAreaIcon(plan.target_area)}
-              </div>
-              <div style={{ fontSize: '0.75rem', fontWeight: 700 }}>
-                {plan.day.slice(0, 3)}
-              </div>
-              <div style={{ fontSize: '0.6rem', opacity: 0.8 }}>
-                {plan.target_area === 'Rest Day' ? 'Rest' : plan.target_area.split(' ')[0]}
-              </div>
+              <div>{plan.day.slice(0, 3).toUpperCase()}</div>
+              <div style={{ opacity: 0.9, fontSize: '0.65rem' }}>{accent.icon}</div>
             </button>
-          ))}
-        </div>
+          )
+        })}
+      </div>
 
-        {selectedDayPlan && (
-          <>
-            <div className="workout-summary">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                <div>
-                  <h3 style={{ margin: '0 0 5px', fontSize: '1.3rem', fontWeight: 800 }}>
-                    {selectedDayPlan.day} - {selectedDayPlan.target_area}
-                  </h3>
-                  <p style={{ margin: 0, fontSize: '0.9rem', opacity: 0.9 }}>
-                    {selectedDayPlan.exercises.length} exercises • {selectedDayPlan.total_duration}
-                  </p>
+      {selectedDayPlan && (
+        <>
+          <div className="workout-head">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ fontSize: '0.76rem', color: '#64748b', fontWeight: 700, letterSpacing: '0.04em' }}>SELECTED SESSION</div>
+                <h3 style={{ margin: '4px 0 0', fontSize: '1.15rem' }}>{selectedDayPlan.day} � {selectedDayPlan.target_area}</h3>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ borderRadius: 10, background: '#ecfeff', color: '#155e75', padding: '6px 10px', fontWeight: 700, fontSize: '0.8rem' }}>
+                  {selectedDayPlan.exercises.length} exercises
                 </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '1.8rem', fontWeight: 900 }}>
-                    {selectedDayPlan.calories_burned}
-                  </div>
-                  <div style={{ fontSize: '0.8rem', opacity: 0.9 }}>calories</div>
+                <div style={{ borderRadius: 10, background: '#fffbeb', color: '#92400e', padding: '6px 10px', fontWeight: 700, fontSize: '0.8rem' }}>
+                  {selectedDayPlan.total_duration}
+                </div>
+                <div style={{ borderRadius: 10, background: '#eef2ff', color: '#3730a3', padding: '6px 10px', fontWeight: 700, fontSize: '0.8rem' }}>
+                  {selectedDayPlan.calories_burned} kcal
                 </div>
               </div>
             </div>
+          </div>
 
-            {selectedDayPlan.target_area === 'Rest Day' ? (
-              <div style={{ 
-                background: '#f0fdf4', 
-                padding: '30px', 
-                borderRadius: '20px', 
-                textAlign: 'center',
-                border: '2px solid #86efac',
-                color: '#166534'
-              }}>
-                <div style={{ fontSize: '3rem', marginBottom: '15px' }}>😴</div>
-                <h3 style={{ margin: '0 0 10px', fontSize: '1.3rem', fontWeight: 800 }}>Rest & Recovery Day</h3>
-                <p style={{ margin: 0, fontSize: '0.95rem', lineHeight: 1.5 }}>
-                  Your body needs time to recover and build muscle. Focus on light stretching, hydration, and nutrition today.
-                </p>
-              </div>
-            ) : (
-              <div>
-                {selectedDayPlan.exercises.map((exercise: any, index: number) => (
-                  <div key={index} className="exercise-card">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '15px' }}>
-                      <div style={{ flex: 1 }}>
-                        <h4 style={{ margin: '0 0 8px', fontSize: '1.1rem', fontWeight: 800, color: '#1e293b' }}>
-                          {index + 1}. {exercise.name}
-                        </h4>
-                        <p style={{ margin: '0 0 10px', fontSize: '0.9rem', color: '#64748b', lineHeight: 1.4 }}>
-                          {exercise.target}
-                        </p>
-                        <div style={{ display: 'flex', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' }}>
-                          <span style={{ 
-                            background: '#e0e7ff', 
-                            color: '#3730a3', 
-                            padding: '4px 10px', 
-                            borderRadius: '6px', 
-                            fontSize: '0.8rem', 
-                            fontWeight: 600 
-                          }}>
-                            {exercise.reps}
-                          </span>
-                          <span style={{ 
-                            background: '#fef3c7', 
-                            color: '#92400e', 
-                            padding: '4px 10px', 
-                            borderRadius: '6px', 
-                            fontSize: '0.8rem', 
-                            fontWeight: 600 
-                          }}>
-                            {exercise.sets} sets
-                          </span>
-                          <span style={{ 
-                            background: '#e0f2fe', 
-                            color: '#0c4a6e', 
-                            padding: '4px 10px', 
-                            borderRadius: '6px', 
-                            fontSize: '0.8rem', 
-                            fontWeight: 600 
-                          }}>
-                            Rest: {exercise.rest_time}
-                          </span>
-                          <span style={{ 
-                            background: '#fef3c7', 
-                            color: '#92400e', 
-                            padding: '4px 10px', 
-                            borderRadius: '6px', 
-                            fontSize: '0.8rem', 
-                            fontWeight: 600 
-                          }}>
-                            {exercise.equipment}
-                          </span>
-                          <span style={{ 
-                            background: '#fef3c7', 
-                            color: '#92400e', 
-                            padding: '4px 10px', 
-                            borderRadius: '6px', 
-                            fontSize: '0.8rem', 
-                            fontWeight: 600 
-                          }}>
-                            {exercise.bodyPart}
-                          </span>
-                        </div>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div className="difficulty-badge" style={{ 
-                          background: getDifficultyColor(exercise.target), 
-                          color: 'white' 
-                        }}>
-                          {exercise.target}
-                        </div>
-                      </div>
+          {selectedDayPlan.target_area === 'Rest Day' ? (
+            <div style={{ border: '1px solid #cbd5e1', borderRadius: 16, background: '#f8fafc', padding: 20, textAlign: 'center', color: '#334155' }}>
+              <h4 style={{ margin: 0 }}>Rest and Recovery</h4>
+              <p style={{ margin: '8px 0 0', fontSize: '0.92rem' }}>Use this day for walking, stretching, hydration, and sleep quality.</p>
+            </div>
+          ) : (
+            <div className="exercise-grid">
+              {selectedDayPlan.exercises.map((exercise, index) => {
+                const accent = getAreaAccent(selectedDayPlan.target_area)
+                return (
+                  <article key={`${exercise.id}-${index}`} className="exercise-card">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                      <h4 style={{ margin: 0, fontSize: '0.98rem' }}>{index + 1}. {exercise.name}</h4>
+                      <span
+                        style={{
+                          background: accent.bg,
+                          color: accent.text,
+                          border: `1px solid ${accent.border}`,
+                          borderRadius: 8,
+                          padding: '3px 7px',
+                          fontSize: '0.65rem',
+                          fontWeight: 800
+                        }}
+                      >
+                        {exercise.target}
+                      </span>
                     </div>
 
-                    {exercise.instructions && exercise.instructions.length > 0 && (
-                      <div style={{ 
-                        marginTop: '20px', 
-                        paddingTop: '20px', 
-                        borderTop: '2px dashed #f1f5f9' 
-                      }}>
-                        <p style={{ fontWeight: 800, fontSize: '0.8rem', color: '#94a3b8', marginBottom: 12 }}>
-                          EXECUTION STEPS
-                        </p>
-                        {exercise.instructions.map((step: string, idx: number) => (
-                          <div key={idx} style={{ display: 'flex', gap: 12, marginBottom: 10, lineHeight: 1.5 }}>
-                            <span style={{ color: '#4361ee', fontWeight: 900 }}>{idx + 1}</span>
-                            <span style={{ color: '#475569', fontSize: '0.95rem' }}>{step}</span>
+                    <div style={{ marginTop: 10, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <span style={{ borderRadius: 8, background: '#f1f5f9', color: '#334155', padding: '3px 8px', fontSize: '0.72rem', fontWeight: 700 }}>{exercise.reps} reps</span>
+                      <span style={{ borderRadius: 8, background: '#f1f5f9', color: '#334155', padding: '3px 8px', fontSize: '0.72rem', fontWeight: 700 }}>{exercise.sets} sets</span>
+                      <span style={{ borderRadius: 8, background: '#f1f5f9', color: '#334155', padding: '3px 8px', fontSize: '0.72rem', fontWeight: 700 }}>Rest {exercise.rest_time}</span>
+                      <span style={{ borderRadius: 8, background: '#f8fafc', color: '#475569', border: '1px solid #e2e8f0', padding: '3px 8px', fontSize: '0.72rem', fontWeight: 700 }}>{exercise.equipment || 'Bodyweight'}</span>
+                    </div>
+
+                    {exercise.instructions?.length > 0 && (
+                      <div style={{ marginTop: 10, borderTop: '1px dashed #dbe3ef', paddingTop: 10 }}>
+                        {exercise.instructions.slice(0, 3).map((step, idx) => (
+                          <div key={idx} style={{ fontSize: '0.8rem', color: '#475569', marginBottom: 6 }}>
+                            {idx + 1}. {step}
                           </div>
                         ))}
                       </div>
                     )}
 
-                    <div style={{ display: 'flex', gap: 10, marginTop: 15 }}>
+                    <div className="exercise-actions">
                       <a
                         href={`https://workoutguru.fit/exercises/${exercise.name.toLowerCase().replace(/\s+/g, '-')}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="guru-btn"
-                        style={{ textDecoration: 'none' }}
+                        className="btn-link"
                       >
-                        <span>WATCH ON WORKOUT GURU</span>
-                        <span style={{ fontSize: '1.1rem' }}>↗</span>
+                        View guide
                       </a>
                       <button
+                        className="btn-ai"
                         onClick={() => {
-                          // Store workout plan for AI trainer
-                          const workoutPlan = selectedDayPlan.exercises.map((ex: any) => ({
+                          const workoutPlan = selectedDayPlan.exercises.map((ex) => ({
                             name: ex.name,
                             target: ex.target,
                             gifUrl: ex.gifUrl,
                             instructions: ex.instructions
                           }))
                           sessionStorage.setItem('workoutPlan', JSON.stringify(workoutPlan))
-                          window.location.href = `/trainer?name=${encodeURIComponent(exercise.name)}&target=${encodeURIComponent(exercise.target)}&gif=${encodeURIComponent(exercise.gifUrl)}&idx=${index}`
-                        }}
-                        style={{ 
-                          display: 'inline-flex', 
-                          alignItems: 'center', 
-                          gap: 8, 
-                          background: '#10b981', 
-                          color: 'white', 
-                          padding: '10px 14px', 
-                          borderRadius: 12, 
-                          border: 'none', 
-                          fontWeight: 800, 
-                          cursor: 'pointer' 
+                          window.location.href = `/trainer?name=${encodeURIComponent(exercise.name)}&target=${encodeURIComponent(
+                            exercise.target
+                          )}&gif=${encodeURIComponent(exercise.gifUrl)}&idx=${index}`
                         }}
                       >
-                        Start AI Trainer
+                        Start AI trainer
                       </button>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
-        )}
-      </div>
+                  </article>
+                )
+              })}
+            </div>
+          )}
+        </>
+      )}
     </div>
   )
 }

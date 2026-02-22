@@ -21,7 +21,7 @@ async def get_public_weekly_meal_plan(force_refresh: bool = False):
     try:
         # Try to get actual user profile data for demo
         # In production, this would use authenticated user data
-        profile_data = await get_demo_user_profile()
+        profile_data, latest_report = await get_demo_user_profile()
         
         # Check if plan needs updating
         current_plan = weekly_plans.get("current")
@@ -29,7 +29,7 @@ async def get_public_weekly_meal_plan(force_refresh: bool = False):
         
         if should_update:
             # Generate new plan with actual user data
-            new_plan = generate_weekly_plan(profile_data)
+            new_plan = generate_weekly_plan(profile_data, latest_report)
             weekly_plans["current"] = new_plan
             
             return {
@@ -62,7 +62,7 @@ async def get_demo_user_profile():
     try:
         # Try to get actual profile data from database
         from ..deps import get_db
-        from ..models import Profile
+        from ..models import Profile, Report
         
         # For demo purposes, we'll try to get the first available profile
         # In production, this would use the authenticated user's ID
@@ -70,6 +70,7 @@ async def get_demo_user_profile():
         profile = db.query(Profile).first()
         
         if profile:
+            latest_report = db.query(Report).filter(Report.user_id == profile.user_id).order_by(Report.created_at.desc()).first()
             return {
                 "weight_kg": profile.weight_kg or 70,
                 "height_cm": profile.height_cm or 170,
@@ -79,8 +80,14 @@ async def get_demo_user_profile():
                 "gender": profile.gender or "male",
                 "diet_type": profile.diet_type or "vegetarian",
                 "health_diseases": profile.health_diseases or "",
-                "food_allergies": profile.food_allergies or ""
-            }
+                "food_allergies": profile.food_allergies or "",
+                "breakfast": profile.breakfast or "",
+                "lunch": profile.lunch or "",
+                "snacks": profile.snacks or "",
+                "dinner": profile.dinner or "",
+                "target_area": profile.target_area or "",
+                "water_consumption_l": profile.water_consumption_l or 2.5
+            }, latest_report
         else:
             # Fallback to demo data if no profile found
             return {
@@ -92,8 +99,14 @@ async def get_demo_user_profile():
                 "gender": "male",
                 "diet_type": "vegetarian",
                 "health_diseases": "",
-                "food_allergies": ""
-            }
+                "food_allergies": "",
+                "breakfast": "",
+                "lunch": "",
+                "snacks": "",
+                "dinner": "",
+                "target_area": "",
+                "water_consumption_l": 2.5
+            }, None
     except Exception as e:
         # Fallback to demo data if database access fails
         return {
@@ -105,8 +118,14 @@ async def get_demo_user_profile():
             "gender": "male",
             "diet_type": "vegetarian",
             "health_diseases": "",
-            "food_allergies": ""
-        }
+            "food_allergies": "",
+            "breakfast": "",
+            "lunch": "",
+            "snacks": "",
+            "dinner": "",
+            "target_area": "",
+            "water_consumption_l": 2.5
+        }, None
 
 @router.get("/daily/{day}")
 async def get_public_daily_meal_plan(day: str):

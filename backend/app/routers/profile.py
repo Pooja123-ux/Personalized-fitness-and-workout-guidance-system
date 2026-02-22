@@ -17,6 +17,16 @@ from ..logic import (
 
 router = APIRouter()
 
+def _invalidate_weekly_plan_cache(user_id: int) -> None:
+    """Invalidate cached weekly meal plans after profile/medical changes."""
+    try:
+        from .weekly_meal_plan import weekly_plans
+        weekly_plans.pop(f"user:{user_id}", None)
+        # Keep public demo endpoint in sync as well.
+        weekly_plans.pop("current", None)
+    except Exception:
+        pass
+
 
 # =========================================================
 # CREATE OR UPDATE PROFILE
@@ -27,7 +37,7 @@ def create_or_update_profile(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    bmi = compute_bmi(payload.height_cm, payload.weight_kg)
+    bmi = compute_bmi(float(payload.height_cm), float(payload.weight_kg))
     category = bmi_category(bmi)
 
     profile = db.query(Profile).filter(Profile.user_id == user.id).first()
@@ -35,8 +45,8 @@ def create_or_update_profile(
     if profile:
         for k, v in payload.model_dump().items():
             setattr(profile, k, v)
-        profile.bmi = bmi
-        profile.bmi_category = category
+        profile.bmi = float(bmi)
+        profile.bmi_category = str(category)
     else:
         profile = Profile(
             user_id=user.id,
@@ -48,6 +58,7 @@ def create_or_update_profile(
 
     db.commit()
     db.refresh(profile)
+    _invalidate_weekly_plan_cache(user.id)
 
     return ProfileOut(**profile.__dict__)
 
@@ -129,6 +140,7 @@ def upload_medical_report(
     db.add(report)
     db.commit()
     db.refresh(report)
+    _invalidate_weekly_plan_cache(user.id)
 
     # Fetch or auto-create profile
     profile = db.query(Profile).filter(Profile.user_id == user.id).first()

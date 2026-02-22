@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, Query
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 import pandas as pd
 import os
+from pathlib import Path
 from ..deps import get_current_user
 import re
 
@@ -10,11 +11,59 @@ router = APIRouter()
 CSV_PATH = os.path.join(os.path.dirname(__file__), "..", "exercises.csv")
 df = pd.read_csv(CSV_PATH)
 df.columns = [c.strip() for c in df.columns]
+GIF_DIR = Path(__file__).resolve().parent.parent / "gifs"
 
 def _norm(s: str) -> str:
     return "".join(ch.lower() if ch.isalnum() or ch.isspace() else " " for ch in str(s)).strip()
 
-def _extract_exercise_type(name: str) -> Dict[str, any]:
+def _slugify(s: str) -> str:
+    return re.sub(r"\s+", "-", re.sub(r"[^a-z0-9\s-]", "", str(s).lower()).strip())
+
+def _canon(s: str) -> str:
+    return "".join(ch for ch in str(s).lower() if ch.isalnum())
+
+LOCAL_GIF_ALIASES = {
+    "3 4 sit up": "34-sit-up.gif",
+    "bench dip knees bent": "bench-dip-knees-bent.gif",
+    "left hook boxing": "left-hook-boxing.gif",
+    "archer push up": "archer-push-up.gif",
+    "archer pull up": "archer-pull-up.gif",
+    "astride jumps male": "astride-jumps-male.gif",
+    "all fours squad stretch": "all-fours-squad-stretch.gif",
+    "ankle circles": "ankle-circles.gif",
+    "bear crawl": "bear-crawl..gif",
+    "back and forth step": "back-and-forth-step..gif",
+}
+
+def _resolve_local_gif_url(exercise_name: str) -> str:
+    if not GIF_DIR.exists():
+        return ""
+
+    available = {p.name.lower(): p.name for p in GIF_DIR.glob("*.gif")}
+    if not available:
+        return ""
+
+    n = _norm(exercise_name)
+    alias = LOCAL_GIF_ALIASES.get(n)
+    if alias and alias.lower() in available:
+        return f"/gifs/{available[alias.lower()]}"
+
+    slug = _slugify(exercise_name)
+    direct_candidates = [f"{slug}.gif", f"{slug}..gif"]
+    for candidate in direct_candidates:
+        hit = available.get(candidate.lower())
+        if hit:
+            return f"/gifs/{hit}"
+
+    target_canon = _canon(exercise_name)
+    for fname in available.values():
+        stem = Path(fname).stem
+        if _canon(stem) == target_canon:
+            return f"/gifs/{fname}"
+
+    return ""
+
+def _extract_exercise_type(name: str) -> Dict[str, Any]:
     """Extract exercise type and characteristics from name"""
     name_lower = name.lower()
     
@@ -64,9 +113,14 @@ def get_instructions(name: str = Query(...), user=Depends(get_current_user)) -> 
     # Add exercise metadata
     exercise_info = _extract_exercise_type(str(r.get("name") or name))
     
+    remote_gif = str(r.get("gifUrl") or "")
+    local_gif = _resolve_local_gif_url(str(r.get("name") or name))
+
     return {
         "name": str(r.get("name") or name),
-        "gifUrl": str(r.get("gifUrl") or ""),
+        "gifUrl": remote_gif,
+        "localGifUrl": local_gif,
+        "resolvedGifUrl": local_gif or remote_gif,
         "instructions": instructions,
         "bodyPart": str(r.get("bodyPart") or ""),
         "equipment": str(r.get("equipment") or ""),
@@ -97,9 +151,14 @@ def search_exercises(q: str = Query(...), limit: int = Query(10), user=Depends(g
     results = []
     for _, row in all_matches.head(limit).iterrows():
         exercise_info = _extract_exercise_type(str(row.get("name")))
+        exercise_name = str(row.get("name"))
+        remote_gif = str(row.get("gifUrl", ""))
+        local_gif = _resolve_local_gif_url(exercise_name)
         results.append({
-            "name": str(row.get("name")),
-            "gifUrl": str(row.get("gifUrl", "")),
+            "name": exercise_name,
+            "gifUrl": remote_gif,
+            "localGifUrl": local_gif,
+            "resolvedGifUrl": local_gif or remote_gif,
             "bodyPart": str(row.get("bodyPart", "")),
             "target": str(row.get("target", "")),
             "equipment": str(row.get("equipment", "")),

@@ -72,7 +72,10 @@ function Images() {
           align-items: center;
           min-height: calc(100vh - 80px);
           font-family: 'Plus Jakarta Sans', sans-serif;
-          background: #f8fafc;
+          background:
+            radial-gradient(circle at 15% 0%, #e8f7ef 0%, transparent 35%),
+            radial-gradient(circle at 100% 100%, #ecf4ff 0%, transparent 45%),
+            #f8fafc;
         }
 
         .glass-card {
@@ -113,6 +116,37 @@ function Images() {
           font-weight: 700;
           margin-bottom: 40px;
           border: 1px solid #dcfce7;
+        }
+
+        .meta-strip {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 10px;
+          margin: 0 0 24px;
+        }
+
+        .meta-card {
+          border: 1px solid #e2e8f0;
+          background: #f8fafc;
+          border-radius: 14px;
+          padding: 10px 12px;
+        }
+
+        .meta-card .k {
+          display: block;
+          font-size: 0.7rem;
+          text-transform: uppercase;
+          letter-spacing: 0.4px;
+          color: #64748b;
+          font-weight: 800;
+        }
+
+        .meta-card .v {
+          display: block;
+          margin-top: 4px;
+          font-size: 0.95rem;
+          color: #0f172a;
+          font-weight: 800;
         }
 
         .input-group label {
@@ -207,6 +241,15 @@ function Images() {
           position: relative;
         }
 
+        .display-title {
+          width: 100%;
+          max-width: 480px;
+          margin-bottom: 16px;
+          color: #334155;
+          font-weight: 800;
+          letter-spacing: -0.2px;
+        }
+
         .kcal-circle {
           width: 280px;
           height: 280px;
@@ -284,13 +327,25 @@ function Images() {
           .glass-card { grid-template-columns: 1fr; border-radius: 30px; }
           .controls { border-right: none; border-bottom: 1px solid #f1f5f9; padding: 2.5rem; }
           .display { padding: 3rem; }
+          .meta-strip { grid-template-columns: 1fr; }
         }
       `}</style>
 
       <div className="glass-card">
         <section className="controls">
           <h1>Nutrition Analyzer</h1>
-          <div className="goal-tag">🎯 {motive}</div>
+          <div className="goal-tag">Goal: {motive}</div>
+
+          <div className="meta-strip">
+            <div className="meta-card">
+              <span className="k">Per 100g</span>
+              <span className="v">{per100 ? `${per100.toFixed(0)} kcal` : 'Not selected'}</span>
+            </div>
+            <div className="meta-card">
+              <span className="k">Selected Qty</span>
+              <span className="v">{grams} g</span>
+            </div>
+          </div>
 
           <div className="input-group" ref={dropdownRef} style={{ position: 'relative' }}>
             <label>Nutrition Source</label>
@@ -325,6 +380,7 @@ function Images() {
         </section>
 
         <section className="display">
+          <div className="display-title">Nutrition Breakdown</div>
           {kcal > 0 ? (
             <>
               <div className="kcal-circle">
@@ -353,7 +409,7 @@ function Images() {
             </>
           ) : (
             <div className="empty-state">
-              <div style={{ fontSize: '4.5rem', marginBottom: '1.5rem' }}>📊</div>
+              <div style={{ fontSize: '2.2rem', marginBottom: '1rem', fontWeight: 900 }}>NUTRI</div>
               <p style={{ fontWeight: 700, fontSize: '1.1rem', color: '#64748b' }}>Enter details to analyze nutrition</p>
             </div>
           )}
@@ -364,3 +420,4 @@ function Images() {
 }
 
 export default Images
+

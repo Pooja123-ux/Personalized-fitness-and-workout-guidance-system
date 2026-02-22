@@ -12,6 +12,7 @@ from .nutrition import (
     calculate_macros_from_calories
 )
 from datetime import date
+from ..deps import get_db
 
 router = APIRouter()
 
@@ -23,7 +24,8 @@ async def get_public_daily_nutrition(target_date: date):
         id = "public_user"
     
     mock_user = MockUser()
-    return await get_daily_nutrition(target_date, mock_user)
+    db = next(get_db())
+    return await get_daily_nutrition(target_date, mock_user, db)
 
 @router.get("/summary")
 async def get_public_nutrition_summary():
@@ -33,7 +35,8 @@ async def get_public_nutrition_summary():
         id = "public_user"
     
     mock_user = MockUser()
-    return await get_nutrition_summary(mock_user)
+    db = next(get_db())
+    return await get_nutrition_summary(mock_user, db)
 
 @router.get("/weekly")
 async def get_public_weekly_nutrition():
@@ -43,7 +46,8 @@ async def get_public_weekly_nutrition():
         id = "public_user"
     
     mock_user = MockUser()
-    return await get_weekly_nutrition(mock_user)
+    db = next(get_db())
+    return await get_weekly_nutrition(mock_user, db)
 
 @router.get("/targets")
 async def get_public_nutrition_targets():
@@ -53,4 +57,5 @@ async def get_public_nutrition_targets():
         id = "public_user"
     
     mock_user = MockUser()
-    return await get_nutrition_targets(mock_user)
+    db = next(get_db())
+    return await get_nutrition_targets(mock_user, db)

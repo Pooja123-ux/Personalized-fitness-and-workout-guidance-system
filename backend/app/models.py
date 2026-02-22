@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from .database import Base
 from datetime import datetime
@@ -132,3 +132,28 @@ class DietRecommendation(Base):
     water_l = Column(Float, default=0)
 
     user = relationship("User", back_populates="diet_recommendations")
+
+
+# -------------------- ADHERENCE LOGS --------------------
+
+class AdherenceLog(Base):
+    __tablename__ = "adherence_logs"
+    __table_args__ = (
+        UniqueConstraint("user_id", "log_date", name="uq_adherence_user_date"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    log_date = Column(String(20), nullable=False, index=True)  # YYYY-MM-DD
+
+    planned_calories = Column(Float, default=0)
+    consumed_planned_calories = Column(Float, default=0)
+    completed_items_count = Column(Integer, default=0)
+    total_items_count = Column(Integer, default=0)
+    completed_item_ids_json = Column(Text, default="[]")
+    extra_foods_json = Column(Text, default="[]")
+    water_ml = Column(Integer, default=0)
+    water_target_ml = Column(Integer, default=2000)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

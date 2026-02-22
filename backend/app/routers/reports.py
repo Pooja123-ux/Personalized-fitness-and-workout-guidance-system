@@ -14,6 +14,14 @@ router = APIRouter()
 UPLOAD_DIR = "backend/storage/reports"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+def _invalidate_weekly_plan_cache(user_id: int) -> None:
+    try:
+        from .weekly_meal_plan import weekly_plans
+        weekly_plans.pop(f"user:{user_id}", None)
+        weekly_plans.pop("current", None)
+    except Exception:
+        pass
+
 
 def _normalize_conditions(conditions):
     mapped = []
@@ -82,6 +90,7 @@ async def upload_report(
     db.add(report)
     db.commit()
     db.refresh(report)
+    _invalidate_weekly_plan_cache(user.id)
     
     return {"id": str(report.id), "filename": filename, "path": path, "url": f"/reports/download/{report.id}"}
 
@@ -139,3 +148,29 @@ def download_report(
     if not os.path.exists(report.path):
         raise HTTPException(status_code=404, detail="File missing")
     return FileResponse(path=report.path, media_type="application/pdf", filename=report.filename)
+
+
+@router.delete("/{report_id}", response_model=Dict[str, str])
+def delete_report(
+    report_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user)
+):
+    report = db.query(Report).filter(Report.id == report_id, Report.user_id == user.id).first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    file_path = report.path
+    db.delete(report)
+    db.commit()
+    _invalidate_weekly_plan_cache(user.id)
+
+    # Only remove the physical file when no other report references it.
+    remaining_refs = db.query(Report).filter(Report.path == file_path).count()
+    if remaining_refs == 0 and file_path and os.path.exists(file_path):
+        try:
+            os.remove(file_path)
+        except Exception:
+            pass
+
+    return {"message": "Report deleted", "id": str(report_id)}

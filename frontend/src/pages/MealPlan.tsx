@@ -148,7 +148,7 @@ function MealPlan() {
             <div className="summary-cards">
               <div className="summary-card">
                 <span className="label">Daily Calories</span>
-                <span className="value">{mealPlan.daily_calories}</span>
+                <span className="value">{Math.round(Number(mealPlan.daily_calories || 0))}</span>
               </div>
               <div className="summary-card">
                 <span className="label">BMI</span>

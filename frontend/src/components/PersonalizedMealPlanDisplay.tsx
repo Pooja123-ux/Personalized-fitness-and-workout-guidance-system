@@ -1,19 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { useProfile } from '../context/ProfileContext';
+import api from '../api';
 
 interface UserProfile {
+  name: string;
+  bmi: number;
+  bmi_category: string;
+  weight_kg: number;
+  height_cm: number;
+  lifestyle_level: string;
+  water_l: number;
+  daily_calories?: number;
   age: number;
   gender: 'male' | 'female';
-  height: number; // cm
-  weight: number; // kg
   activity_level: 'sedentary' | 'light' | 'moderate' | 'active' | 'very_active';
   health_goals: string[];
   medical_conditions: string[];
   allergies: string[];
   dietary_restrictions: string[];
   preferred_cuisines: string[];
-  foods_to_avoid: string[]; // User uploaded foods to avoid
-  preferred_foods: string[]; // User uploaded preferred foods
+  foods_to_avoid: string[];
+  preferred_foods: string[];
   supplements: string[];
   medical_records?: {
     blood_pressure?: string;
@@ -57,49 +64,433 @@ interface PersonalizedDailyPlan {
   personalized_notes: string[];
 }
 
+interface ReportItem {
+  id: number | string;
+  filename?: string;
+  summary?: string;
+}
+
+interface ReportInsights {
+  conditions: string[];
+  foodsToConsume: string[];
+  foodsToAvoid: string[];
+  labs: Record<string, string>;
+}
+
+interface ReportComparison {
+  duplicateGroups: Array<{ filenames: string[]; count: number }>;
+  duplicateReportsCount: number;
+  latestIsDuplicate: boolean;
+  diseaseTrendAlerts: Array<{
+    condition: string;
+    lab: string;
+    previousValue: string;
+    currentValue: string;
+    direction: 'up' | 'down' | 'same';
+    changePercent: number | null;
+    level: 'warning' | 'good' | 'neutral';
+  }>;
+}
+
+interface AdherenceExtraFood {
+  name: string;
+  calories: number;
+}
+
 const PersonalizedMealPlanDisplay: React.FC = () => {
   const { profile: realProfile } = useProfile();
+  
+  const getWaterTargetMl = (): number => {
+    const liters = Number(realProfile?.water_l || 2);
+    return Math.max(500, Math.round(liters * 1000));
+  };
+  
   const [mealPlan, setMealPlan] = useState<PersonalizedDailyPlan[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedDay, setSelectedDay] = useState<string>('Monday');
+  const [selectedDay, setSelectedDay] = useState<string>(
+    ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date().getDay()] || 'Monday'
+  );
   const [error, setError] = useState<string | null>(null);
+  const [reportInsights, setReportInsights] = useState<ReportInsights>({
+    conditions: [],
+    foodsToConsume: [],
+    foodsToAvoid: [],
+    labs: {}
+  });
+  const [reportComparison, setReportComparison] = useState<ReportComparison>({
+    duplicateGroups: [],
+    duplicateReportsCount: 0,
+    latestIsDuplicate: false,
+    diseaseTrendAlerts: []
+  });
+  const [insightsLoaded, setInsightsLoaded] = useState(false);
+  const [completedItemIds, setCompletedItemIds] = useState<string[]>([]);
+  const [extraFoods, setExtraFoods] = useState<AdherenceExtraFood[]>([]);
+  const [newFoodName, setNewFoodName] = useState('');
+  const [newFoodCalories, setNewFoodCalories] = useState<number | ''>('');
+  const [waterMl, setWaterMl] = useState<number>(getWaterTargetMl());
+  const [adherenceStatus, setAdherenceStatus] = useState<string | null>(null);
 
   const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const mealTypes: Array<'breakfast' | 'lunch' | 'snacks' | 'dinner'> = ['breakfast', 'lunch', 'snacks', 'dinner'];
+
+  const getDateForDay = (day: string): string => {
+    const dayIndexMap: Record<string, number> = {
+      Monday: 0,
+      Tuesday: 1,
+      Wednesday: 2,
+      Thursday: 3,
+      Friday: 4,
+      Saturday: 5,
+      Sunday: 6,
+    };
+    const today = new Date();
+    const jsDay = today.getDay(); // 0=Sun
+    const mondayOffset = jsDay === 0 ? -6 : 1 - jsDay;
+    const monday = new Date(today);
+    monday.setHours(0, 0, 0, 0);
+    monday.setDate(today.getDate() + mondayOffset);
+    const target = new Date(monday);
+    target.setDate(monday.getDate() + (dayIndexMap[day] ?? 0));
+    // Keep logs tied to the most recent occurrence of this weekday (not future).
+    if (target > today) {
+      target.setDate(target.getDate() - 7);
+    }
+    return target.toISOString().split('T')[0];
+  };
+
+  const buildMealItemId = (mealType: string, idx: number, name: string): string =>
+    `${mealType}:${idx}:${String(name || '').trim().toLowerCase()}`;
+
+  const splitList = (value?: string): string[] => {
+    if (!value) return [];
+    return value
+      .split(/[,\n;/|]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  };
+
+  const dedupe = (items: string[]): string[] => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const item of items) {
+      const key = item.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push(item);
+      }
+    }
+    return out;
+  };
+
+  const normalizeText = (value: string): string =>
+    value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+  const toTitleCase = (value: string): string =>
+    value
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+
+  const parseNumericValue = (raw: unknown): number | null => {
+    if (raw === null || raw === undefined) return null;
+    const str = String(raw).trim();
+    if (!str) return null;
+    const bpMatch = str.match(/(\d+(?:\.\d+)?)\s*[/:-]\s*(\d+(?:\.\d+)?)/);
+    if (bpMatch) {
+      const systolic = Number(bpMatch[1]);
+      const diastolic = Number(bpMatch[2]);
+      if (Number.isFinite(systolic) && Number.isFinite(diastolic)) {
+        return (systolic + diastolic) / 2;
+      }
+    }
+    const numMatch = str.match(/-?\d+(?:\.\d+)?/);
+    if (!numMatch) return null;
+    const parsed = Number(numMatch[0]);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const parseBloodPressureParts = (raw: unknown): { systolic: number; diastolic: number } | null => {
+    const str = String(raw || '').trim();
+    const match = str.match(/(\d+(?:\.\d+)?)\s*[/:-]\s*(\d+(?:\.\d+)?)/);
+    if (!match) return null;
+    const systolic = Number(match[1]);
+    const diastolic = Number(match[2]);
+    if (!Number.isFinite(systolic) || !Number.isFinite(diastolic)) return null;
+    return { systolic, diastolic };
+  };
+
+  const canonicalSummary = (report: ReportItem): string => {
+    if (report.summary) {
+      try {
+        const data = JSON.parse(report.summary);
+        const conditions = Array.isArray(data.conditions) ? data.conditions.map((x: unknown) => normalizeText(String(x))).sort() : [];
+        const consume = Array.isArray(data.foods_to_consume) ? data.foods_to_consume.map((x: unknown) => normalizeText(String(x))).sort() : [];
+        const avoid = Array.isArray(data.foods_to_avoid) ? data.foods_to_avoid.map((x: unknown) => normalizeText(String(x))).sort() : [];
+        const labs = data.labs && typeof data.labs === 'object'
+          ? Object.entries(data.labs as Record<string, unknown>)
+              .map(([k, v]) => `${normalizeText(String(k))}:${normalizeText(String(v ?? ''))}`)
+              .sort()
+          : [];
+        const signature = JSON.stringify({ conditions, consume, avoid, labs });
+        if (signature !== '{"conditions":[],"consume":[],"avoid":[],"labs":[]}') return `json:${signature}`;
+      } catch {
+        const raw = normalizeText(report.summary);
+        if (raw) return `text:${raw}`;
+      }
+    }
+    return `file:${normalizeText(String(report.filename || 'unknown'))}`;
+  };
+
+  const compareReports = (reports: ReportItem[]): ReportComparison => {
+    const groups = new Map<string, ReportItem[]>();
+    for (const report of reports) {
+      const key = canonicalSummary(report);
+      const list = groups.get(key) || [];
+      list.push(report);
+      groups.set(key, list);
+    }
+
+    const duplicateGroups = Array.from(groups.values())
+      .filter((g) => g.length > 1)
+      .map((g) => ({
+        filenames: g.map((r) => String(r.filename || `Report ${r.id}`)),
+        count: g.length
+      }));
+    const duplicateReportsCount = duplicateGroups.reduce((sum, g) => sum + g.count, 0);
+    const latest = reports[0];
+    const latestIsDuplicate = !!latest && Array.from(groups.values()).some((g) => g.length > 1 && g.some((r) => r.id === latest.id));
+    const reportsOldestFirst = [...reports].reverse();
+    const conditionToReports = new Map<string, Array<{ labs: Record<string, unknown> }>>();
+    for (const report of reportsOldestFirst) {
+      if (!report.summary) continue;
+      try {
+        const data = JSON.parse(report.summary);
+        const conditions = Array.isArray(data.conditions) ? data.conditions : [];
+        const labs = data.labs && typeof data.labs === 'object' ? (data.labs as Record<string, unknown>) : {};
+        for (const rawCondition of conditions) {
+          const condition = normalizeText(String(rawCondition));
+          if (!condition) continue;
+          const list = conditionToReports.get(condition) || [];
+          list.push({ labs });
+          conditionToReports.set(condition, list);
+        }
+      } catch {
+        // Ignore malformed summary rows
+      }
+    }
+
+    const diseaseTrendAlerts: ReportComparison['diseaseTrendAlerts'] = [];
+    for (const [condition, entries] of conditionToReports.entries()) {
+      if (entries.length < 2) continue;
+      const latestEntry = entries[entries.length - 1];
+      const previousEntry = entries[entries.length - 2];
+      const latestLabs = latestEntry.labs || {};
+      const previousLabs = previousEntry.labs || {};
+      const commonLabKeys = Object.keys(latestLabs).filter((k) => Object.prototype.hasOwnProperty.call(previousLabs, k));
+
+      for (const labKey of commonLabKeys) {
+        const latestRaw = latestLabs[labKey];
+        const previousRaw = previousLabs[labKey];
+
+        if (normalizeText(labKey) === 'blood pressure') {
+          const latestBp = parseBloodPressureParts(latestRaw);
+          const previousBp = parseBloodPressureParts(previousRaw);
+          if (latestBp && previousBp) {
+            const systolicDiff = latestBp.systolic - previousBp.systolic;
+            const diastolicDiff = latestBp.diastolic - previousBp.diastolic;
+            const direction = systolicDiff > 0 || diastolicDiff > 0 ? 'up' : systolicDiff < 0 || diastolicDiff < 0 ? 'down' : 'same';
+            const prevAvg = (previousBp.systolic + previousBp.diastolic) / 2;
+            const currAvg = (latestBp.systolic + latestBp.diastolic) / 2;
+            const changePercent = prevAvg > 0 ? Number((((currAvg - prevAvg) / prevAvg) * 100).toFixed(1)) : null;
+            diseaseTrendAlerts.push({
+              condition: toTitleCase(condition),
+              lab: 'Blood Pressure',
+              previousValue: `${previousBp.systolic}/${previousBp.diastolic}`,
+              currentValue: `${latestBp.systolic}/${latestBp.diastolic}`,
+              direction,
+              changePercent,
+              level: direction === 'up' ? 'warning' : direction === 'down' ? 'good' : 'neutral'
+            });
+            continue;
+          }
+        }
+
+        const prev = parseNumericValue(previousRaw);
+        const curr = parseNumericValue(latestRaw);
+        if (prev === null || curr === null) continue;
+        const direction = curr > prev ? 'up' : curr < prev ? 'down' : 'same';
+        const changePercent = prev !== 0 ? Number((((curr - prev) / prev) * 100).toFixed(1)) : null;
+        diseaseTrendAlerts.push({
+          condition: toTitleCase(condition),
+          lab: toTitleCase(String(labKey).replace(/_/g, ' ')),
+          previousValue: String(previousRaw),
+          currentValue: String(latestRaw),
+          direction,
+          changePercent,
+          level: direction === 'up' ? 'warning' : direction === 'down' ? 'good' : 'neutral'
+        });
+      }
+    }
+
+    return { duplicateGroups, duplicateReportsCount, latestIsDuplicate, diseaseTrendAlerts };
+  };
+
+  const normalizeGoal = (motive?: string): string[] => {
+    const m = (motive || '').toLowerCase();
+    const goals: string[] = [];
+    if (m.includes('loss') || m.includes('lose')) goals.push('weight_loss');
+    if (m.includes('gain') || m.includes('muscle') || m.includes('build')) goals.push('muscle_gain');
+    if (goals.length === 0 && m.trim()) goals.push(m.trim().replace(/\s+/g, '_'));
+    return goals;
+  };
+
+  const normalizeActivity = (level?: string): UserProfile['activity_level'] => {
+    const l = (level || '').toLowerCase();
+    if (l.includes('sedentary')) return 'sedentary';
+    if (l.includes('light')) return 'light';
+    if (l.includes('very') || l.includes('high')) return 'very_active';
+    if (l.includes('active')) return 'active';
+    return 'moderate';
+  };
+
+  const parseReports = (reports: ReportItem[]): ReportInsights => {
+    const conditions: string[] = [];
+    const foodsToConsume: string[] = [];
+    const foodsToAvoid: string[] = [];
+    const labs: Record<string, string> = {};
+
+    for (const report of reports) {
+      if (!report.summary) continue;
+      try {
+        const data = JSON.parse(report.summary);
+        const c = Array.isArray(data.conditions) ? data.conditions.map(String) : [];
+        const consume = Array.isArray(data.foods_to_consume) ? data.foods_to_consume.map(String) : [];
+        const avoid = Array.isArray(data.foods_to_avoid) ? data.foods_to_avoid.map(String) : [];
+        const labObj = data.labs && typeof data.labs === 'object' ? data.labs : {};
+
+        conditions.push(...c);
+        foodsToConsume.push(...consume);
+        foodsToAvoid.push(...avoid);
+        for (const [k, v] of Object.entries(labObj)) {
+          if (!labs[k] && v !== null && v !== undefined) labs[k] = String(v);
+        }
+      } catch {
+        // Ignore non-JSON summaries
+      }
+    }
+
+    return {
+      conditions: dedupe(conditions),
+      foodsToConsume: dedupe(foodsToConsume),
+      foodsToAvoid: dedupe(foodsToAvoid),
+      labs
+    };
+  };
 
   // Convert real profile to UserProfile interface format
-  const convertRealProfileToUserProfile = (realProfile: any): UserProfile | null => {
+  const convertRealProfileToUserProfile = (realProfile: any, insights: ReportInsights): UserProfile | null => {
     if (!realProfile) return null;
-    
+
+    const allergies = dedupe(splitList(realProfile.food_allergies));
+    const diseases = dedupe([...splitList(realProfile.health_diseases), ...insights.conditions]);
+    const mealPrefs = dedupe([
+      ...splitList(realProfile.breakfast),
+      ...splitList(realProfile.lunch),
+      ...splitList(realProfile.snacks),
+      ...splitList(realProfile.dinner)
+    ]);
+    const foodsToAvoid = dedupe(insights.foodsToAvoid);
+
+    const fishFamily = ['fish', 'salmon', 'tuna', 'prawn', 'shrimp', 'seafood'];
+    const allergyTokens = allergies.map((a) => a.toLowerCase());
+    const allergyExpanded = allergyTokens.includes('fish') ? [...allergyTokens, ...fishFamily] : allergyTokens;
+    const preferredFromReports = insights.foodsToConsume.filter(
+      (food) => !allergyExpanded.some((a) => food.toLowerCase().includes(a))
+    );
+
+    const dietaryRestrictions = realProfile.diet_type
+      ? [String(realProfile.diet_type).toLowerCase().replace(/\s+/g, '_')]
+      : [];
+
+    const genderValue = String(realProfile.gender || '').toLowerCase().startsWith('f') ? 'female' : 'male';
+
+    const bloodPressure = insights.labs['blood_pressure'];
+    const cholesterol = insights.labs['cholesterol'];
+    const bloodSugar = insights.labs['blood_sugar'];
+
     return {
+      name: realProfile.name,
+      bmi: Number(realProfile.bmi || 0),
+      bmi_category: String(realProfile.bmi_category || ''),
+      weight_kg: Number(realProfile.weight_kg || 75),
+      height_cm: Number(realProfile.height_cm || 175),
+      lifestyle_level: String(realProfile.lifestyle_level || 'moderate'),
+      water_l: Number(realProfile.water_l || 2),
+      daily_calories: realProfile.daily_calories ? Number(realProfile.daily_calories) : undefined,
       age: Math.floor(realProfile.age) || 30,
-      gender: 'male' as const,
-      height: realProfile.height_cm || 175,
-      weight: realProfile.weight_kg || 75,
-      activity_level: 'moderate' as const,
-      dietary_restrictions: ['gluten'],
-      allergies: ['dairy', 'nuts'],
-      health_goals: ['muscle_gain', 'weight_loss'],
-      medical_conditions: ['hypertension'],
-      preferred_cuisines: ['mediterranean', 'asian'],
-      foods_to_avoid: ['processed meats', 'sugary drinks', 'white bread'],
-      preferred_foods: ['salmon', 'quinoa', 'avocado', 'berries', 'nuts', 'olive oil'],
-      supplements: ['Vitamin D', 'Omega-3', 'Probiotics']
+      gender: genderValue as 'male' | 'female',
+      activity_level: normalizeActivity(realProfile.lifestyle_level),
+      dietary_restrictions: dietaryRestrictions,
+      allergies,
+      health_goals: normalizeGoal(realProfile.motive),
+      medical_conditions: diseases,
+      preferred_cuisines: [],
+      foods_to_avoid: foodsToAvoid,
+      preferred_foods: dedupe([...mealPrefs, ...preferredFromReports]),
+      supplements: [],
+      medical_records: {
+        blood_pressure: bloodPressure,
+        cholesterol,
+        blood_sugar: bloodSugar
+      }
     };
   };
 
   // Get the converted user profile for use throughout the component
-  const userProfile = convertRealProfileToUserProfile(realProfile);
+  const userProfile = convertRealProfileToUserProfile(realProfile, reportInsights);
 
   useEffect(() => {
-    fetchPersonalizedMealPlan();
+    fetchReportsAndInsights();
   }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('personalized_selected_day_v1', selectedDay);
+    } catch {
+      // ignore storage errors
+    }
+  }, [selectedDay]);
+
+  useEffect(() => {
+    if (!realProfile || !insightsLoaded) return;
+    fetchPersonalizedMealPlan();
+  }, [realProfile, reportInsights, insightsLoaded]);
+
+  const fetchReportsAndInsights = async () => {
+    try {
+      const response = await api.get<ReportItem[]>('/reports');
+      const reportList = Array.isArray(response.data) ? response.data : [];
+      const insights = parseReports(reportList);
+      const comparison = compareReports(reportList);
+      setReportInsights(insights);
+      setReportComparison(comparison);
+    } catch (err) {
+      console.error('Failed to fetch report insights:', err);
+      setReportInsights({ conditions: [], foodsToConsume: [], foodsToAvoid: [], labs: {} });
+      setReportComparison({ duplicateGroups: [], duplicateReportsCount: 0, latestIsDuplicate: false, diseaseTrendAlerts: [] });
+    } finally {
+      setInsightsLoaded(true);
+    }
+  };
 
   const calculateBMR = (profile: UserProfile | null): number => {
     if (!profile) return 2000;
     
     const age = profile.age || 30;
-    const weight = profile.weight || 70;
-    const height = profile.height || 175;
+    const weight = profile.weight_kg || 70;
+    const height = profile.height_cm || 175;
     
     if (profile.gender === 'male') {
       return 88.362 + (13.397 * weight) + (4.799 * height) - (5.677 * age);
@@ -122,28 +513,132 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
   const fetchPersonalizedMealPlan = async () => {
     try {
       setLoading(true);
-      
-      // Convert real profile to UserProfile format
-      const userProfile = convertRealProfileToUserProfile(realProfile);
-      
-      // Generate meal plan based on user profile
-      const mockPlan: PersonalizedDailyPlan[] = daysOfWeek.map((day, index) => {
-        // Different meals for each day based on preferences and goals
-        const dayMeals = getMealsForDay(day, userProfile);
-        const totalCalories = dayMeals.breakfast[0].calories + dayMeals.lunch[0].calories + dayMeals.snacks[0].calories + dayMeals.dinner[0].calories;
-        
-        return {
-          day,
-          meals: dayMeals,
-          total_calories: totalCalories,
-          total_protein: Math.round(totalCalories * 0.25 / 4), // 25% protein
-          health_score: calculateHealthScoreForDay(dayMeals, userProfile),
-          personalized_notes: getPersonalizedNotesForDay(day, userProfile)
-        };
+
+      const estimateFiberFromName = (name: string): number => {
+        const n = String(name || '').toLowerCase();
+        if (!n) return 2;
+        if (/(apple|banana|orange|papaya|guava|pear|kiwi|pomegranate|mango|fruit)/.test(n)) return 3;
+        if (/(sprout|beans|chana|rajma|lentil|dal|sambar|oat|oatmeal)/.test(n)) return 6;
+        if (/(salad|vegetable|bhindi|gobi|palak|baingan|mushroom)/.test(n)) return 4;
+        if (/(rice|pulao|biryani|naan|roti|paratha|dosa|idli)/.test(n)) return 2;
+        if (/(nuts|makhana|seeds)/.test(n)) return 3;
+        return 2;
+      };
+
+      const inferQuantityFromName = (name: string): string => {
+        const n = String(name || '').toLowerCase();
+        if (/(apple|banana|orange|guava|pear|kiwi|pomegranate|mango|papaya)/.test(n)) return '1 fruit';
+        if (/(roti|chapati|phulka|tandoori roti|missi roti)/.test(n)) return '2 pieces';
+        if (/(idli)/.test(n)) return '2 pieces';
+        if (/(dosa|paratha|uttapam|samosa)/.test(n)) return '1 piece';
+        return '1 serving';
+      };
+
+      const inferServingGrams = (mealType: 'breakfast' | 'lunch' | 'snacks' | 'dinner'): string => {
+        if (mealType === 'snacks') return '120 g';
+        if (mealType === 'breakfast') return '220 g';
+        if (mealType === 'lunch') return '320 g';
+        return '300 g';
+      };
+
+      const mapMeal = (meal: any, mealType: 'breakfast' | 'lunch' | 'snacks' | 'dinner'): PersonalizedMeal => ({
+        // Weekly API currently returns minimal meal fields, so we infer missing display nutrition/serving info here.
+        // Prefer backend values when available.
+        name: String(meal?.name || 'Meal'),
+        calories: Math.round(Number(meal?.calories || 0)),
+        protein: Number(meal?.protein || 0),
+        carbs: Number(meal?.carbs || 0),
+        fats: Number(meal?.fats || 0),
+        fiber: (function () {
+          const candidates = [
+            meal?.fiber,
+            meal?.fibre,
+            meal?.fiber_g,
+            meal?.fibre_g,
+            meal?.['Fiber (g)'],
+            meal?.['Fibre (g)'],
+            meal?.['fiber (g)'],
+            meal?.['fibre (g)'],
+          ];
+          for (const c of candidates) {
+            const v = Number(c);
+            if (Number.isFinite(v) && v > 0) return v;
+          }
+          return estimateFiberFromName(meal?.name || '');
+        })(),
+        vitamins: {},
+        minerals: {},
+        health_benefits: [],
+        meal_type: mealType,
+        preparation_time: Number(meal?.preparation_time || 15),
+        ingredients: [],
+        cooking_tips: [],
+        medical_notes: [],
+        serving_size: String(meal?.serving_size || inferServingGrams(mealType)),
+        quantity: String(meal?.quantity || inferQuantityFromName(meal?.name || ''))
       });
-      
-      setMealPlan(mockPlan);
-      setError(null);
+
+      const toPlanArray = (weeklyMeals: any, normalizedProfile: UserProfile | null): PersonalizedDailyPlan[] => {
+        return daysOfWeek.map((day) => {
+          const dayMeals = weeklyMeals?.[day] || {};
+          const mappedMeals = {
+            breakfast: Array.isArray(dayMeals?.breakfast) ? dayMeals.breakfast.map((m: any) => mapMeal(m, 'breakfast')) : [],
+            lunch: Array.isArray(dayMeals?.lunch) ? dayMeals.lunch.map((m: any) => mapMeal(m, 'lunch')) : [],
+            snacks: Array.isArray(dayMeals?.snacks) ? dayMeals.snacks.map((m: any) => mapMeal(m, 'snacks')) : [],
+            dinner: Array.isArray(dayMeals?.dinner) ? dayMeals.dinner.map((m: any) => mapMeal(m, 'dinner')) : []
+          };
+
+          const allMeals = [...mappedMeals.breakfast, ...mappedMeals.lunch, ...mappedMeals.snacks, ...mappedMeals.dinner];
+
+          const totalCalories = allMeals.reduce((sum, m) => sum + Number(m.calories || 0), 0);
+          const totalProtein = allMeals.reduce((sum, m) => sum + Number(m.protein || 0), 0);
+
+          return {
+            day,
+            meals: mappedMeals,
+            total_calories: Math.round(totalCalories),
+            total_protein: Math.round(totalProtein * 10) / 10,
+            health_score: calculateHealthScoreForDay(mappedMeals, normalizedProfile),
+            personalized_notes: getPersonalizedNotesForDay(day, normalizedProfile, mappedMeals)
+          };
+        });
+      };
+
+      const normalizedProfile = convertRealProfileToUserProfile(realProfile, reportInsights);
+
+      try {
+        const response = await api.get('/meal-plan/weekly-plan');
+        const weeklyMeals = response?.data?.weekly_plan?.meals;
+        if (weeklyMeals && typeof weeklyMeals === 'object') {
+          const livePlan = toPlanArray(weeklyMeals, normalizedProfile);
+          setMealPlan(livePlan);
+          try {
+            localStorage.setItem('personalized_meal_plan_v1', JSON.stringify(livePlan));
+          } catch {
+            // ignore storage errors
+          }
+          setError(null);
+          return;
+        }
+      } catch {
+        // fall back to public endpoint
+      }
+
+      const publicResponse = await api.get('/public-meal-plan/weekly-plan');
+      const publicWeeklyMeals = publicResponse?.data?.weekly_plan?.meals;
+      if (publicWeeklyMeals && typeof publicWeeklyMeals === 'object') {
+        const livePlan = toPlanArray(publicWeeklyMeals, normalizedProfile);
+        setMealPlan(livePlan);
+        try {
+          localStorage.setItem('personalized_meal_plan_v1', JSON.stringify(livePlan));
+        } catch {
+          // ignore storage errors
+        }
+        setError(null);
+        return;
+      }
+
+      throw new Error('Weekly meal plan unavailable');
     } catch (error) {
       setError('Failed to generate personalized meal plan');
       console.error('Error:', error);
@@ -152,720 +647,367 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
     }
   };
 
-  const getPersonalizedMealLibrary = (profile: UserProfile | null) => {
-    return {
-      breakfast: [
-        {
-          name: 'Fluffy Scrambled Eggs with Spinach',
-          calories: 360,
-          protein: 24,
-          carbs: 30,
-          fats: 15,
-          fiber: 6,
-          vitamins: { 'D': 25, 'B12': 35, 'E': 0, 'K': 0, 'A': 0, 'C': 0, 'folate': 0, 'B6': 0, 'niacin': 0 },
-          minerals: { 'iron': 20, 'selenium': 30, 'calcium': 0, 'potassium': 0, 'magnesium': 0, 'phosphorus': 0, 'zinc': 0, 'manganese': 0, 'omega-3': 0 },
-          health_benefits: ['High protein', 'Fluffy texture', 'Iron rich'],
-          meal_type: 'breakfast' as const,
-          preparation_time: 8,
-          ingredients: ['eggs', 'spinach', 'milk', 'butter', 'whole grain toast'],
-          cooking_tips: ['Whisk eggs vigorously for fluffiness', 'Add milk for creaminess', 'Use soft butter'],
-          medical_notes: profile?.allergies.includes('dairy') ? ['Use dairy-free milk and butter'] : [],
-          serving_size: '2 fluffy eggs + 1 slice toast (280g)',
-          quantity: '1 serving'
-        },
-        {
-          name: 'Berry Protein Pancakes',
-          calories: 340,
-          protein: 18,
-          carbs: 42,
-          fats: 8,
-          fiber: 7,
-          vitamins: { 'A': 20, 'C': 15, 'E': 0, 'K': 0, 'B12': 0, 'D': 0, 'folate': 0, 'B6': 0, 'niacin': 0 },
-          minerals: { 'potassium': 12, 'magnesium': 15, 'calcium': 0, 'iron': 0, 'selenium': 0, 'phosphorus': 0, 'zinc': 0, 'manganese': 0, 'omega-3': 0 },
-          health_benefits: ['Antioxidant rich', 'Fiber from berries', 'Natural sweetness'],
-          meal_type: 'breakfast' as const,
-          preparation_time: 12,
-          ingredients: ['whole wheat flour', 'mixed berries', 'egg whites', 'milk', 'vanilla extract'],
-          cooking_tips: ['Use fresh berries', 'Don\'t overmix batter', 'Cook on medium heat'],
-          medical_notes: profile?.allergies.includes('eggs') ? ['Use egg substitute'] : [],
-          serving_size: '3 medium pancakes (300g)',
-          quantity: '1 serving'
-        },
-        {
-          name: 'Overnight Oats with Chia Seeds',
-          calories: 280,
-          protein: 12,
-          carbs: 45,
-          fats: 10,
-          fiber: 8,
-          vitamins: { 'folate': 18, 'B6': 12, 'E': 0, 'K': 0, 'A': 0, 'B12': 0, 'D': 0, 'C': 0, 'niacin': 0 },
-          minerals: { 'magnesium': 18, 'iron': 8, 'calcium': 0, 'potassium': 0, 'selenium': 0, 'phosphorus': 0, 'zinc': 0, 'manganese': 0, 'omega-3': 0 },
-          health_benefits: ['Heart healthy', 'Digestive friendly', 'Sustained energy'],
-          meal_type: 'breakfast' as const,
-          preparation_time: 5,
-          ingredients: ['rolled oats', 'chia seeds', 'almond milk', 'maple syrup', 'cinnamon'],
-          cooking_tips: ['Prepare night before', 'Add toppings in morning', 'Use steel-cut oats'],
-          medical_notes: profile?.medical_conditions.includes('diabetes') ? ['Monitor blood sugar'] : [],
-          serving_size: '1 jar overnight oats (250g)',
-          quantity: '1 serving'
-        },
-        {
-          name: 'Veggie Egg White Omelette',
-          calories: 300,
-          protein: 20,
-          carbs: 25,
-          fats: 18,
-          fiber: 5,
-          vitamins: { 'A': 25, 'K': 15, 'E': 0, 'B12': 0, 'D': 0, 'C': 0, 'folate': 0, 'B6': 0, 'niacin': 0 },
-          minerals: { 'potassium': 15, 'magnesium': 12, 'calcium': 0, 'iron': 0, 'selenium': 0, 'phosphorus': 0, 'zinc': 0, 'manganese': 0, 'omega-3': 0 },
-          health_benefits: ['Low carb', 'High protein', 'Vegetable rich'],
-          meal_type: 'breakfast' as const,
-          preparation_time: 10,
-          ingredients: ['egg whites', 'spinach', 'bell peppers', 'onions', 'olive oil'],
-          cooking_tips: ['Whip egg whites separately', 'Sauté vegetables briefly', 'Use non-stick pan'],
-          medical_notes: profile?.allergies.includes('eggs') ? ['Use egg substitute'] : [],
-          serving_size: '1 omelette (250g)',
-          quantity: '1 serving'
-        },
-        {
-          name: 'Greek Yogurt Parfait with Berries',
-          calories: 320,
-          protein: 18,
-          carbs: 42,
-          fats: 8,
-          fiber: 4,
-          vitamins: { 'B12': 25, 'D': 15, 'E': 0, 'K': 0, 'A': 0, 'C': 0, 'folate': 0, 'B6': 0, 'niacin': 0 },
-          minerals: { 'calcium': 30, 'iron': 5, 'potassium': 0, 'magnesium': 0, 'selenium': 0, 'phosphorus': 0, 'zinc': 0, 'manganese': 0, 'omega-3': 0 },
-          health_benefits: ['Probiotics', 'Bone health', 'High protein'],
-          meal_type: 'breakfast' as const,
-          preparation_time: 5,
-          ingredients: ['greek yogurt', 'mixed berries', 'granola', 'honey'],
-          cooking_tips: ['Use fresh berries', 'Add nuts for extra protein'],
-          medical_notes: profile?.allergies.includes('dairy') ? ['Use dairy-free yogurt alternative'] : [],
-          serving_size: '1 bowl (300g)',
-          quantity: '1 serving'
-        },
-        {
-          name: 'Steel-Cut Oatmeal with Nuts',
-          calories: 290,
-          protein: 8,
-          carbs: 52,
-          fats: 6,
-          fiber: 9,
-          vitamins: { 'folate': 12, 'B6': 8, 'E': 0, 'K': 0, 'A': 0, 'B12': 0, 'D': 0, 'C': 0, 'niacin': 0 },
-          minerals: { 'magnesium': 15, 'iron': 10, 'calcium': 0, 'potassium': 0, 'selenium': 0, 'phosphorus': 0, 'zinc': 0, 'manganese': 0, 'omega-3': 0 },
-          health_benefits: ['Heart health', 'Digestive health', 'Low glycemic'],
-          meal_type: 'breakfast' as const,
-          preparation_time: 8,
-          ingredients: ['steel-cut oats', 'mixed berries', 'almonds', 'chia seeds', 'cinnamon'],
-          cooking_tips: ['Use steel-cut oats for more fiber', 'Add protein powder for extra protein'],
-          medical_notes: profile?.medical_conditions.includes('diabetes') ? ['Monitor blood sugar after meal'] : [],
-          serving_size: '1 bowl cooked (200g)',
-          quantity: '1 serving'
-        },
-        {
-          name: 'Scrambled Eggs with Spinach and Feta',
-          calories: 340,
-          protein: 20,
-          carbs: 28,
-          fats: 18,
-          fiber: 5,
-          vitamins: { 'D': 20, 'B12': 30, 'E': 0, 'K': 0, 'A': 0, 'C': 0, 'folate': 0, 'B6': 0, 'niacin': 0 },
-          minerals: { 'iron': 15, 'selenium': 25, 'calcium': 0, 'potassium': 0, 'magnesium': 0, 'phosphorus': 0, 'zinc': 0, 'manganese': 0, 'omega-3': 0 },
-          health_benefits: ['High protein', 'Iron rich', 'Vitamin D source'],
-          meal_type: 'breakfast' as const,
-          preparation_time: 7,
-          ingredients: ['eggs', 'spinach', 'feta cheese', 'whole grain toast', 'olive oil'],
-          cooking_tips: ['Add turmeric for anti-inflammatory benefits', 'Use minimal oil'],
-          medical_notes: profile?.allergies.includes('dairy') ? ['Use dairy-free cheese alternative'] : [],
-          serving_size: '2 eggs + 1 slice toast (200g)',
-          quantity: '1 serving'
-        },
-        {
-          name: 'Protein Smoothie Bowl',
-          calories: 310,
-          protein: 22,
-          carbs: 38,
-          fats: 12,
-          fiber: 6,
-          vitamins: { 'A': 20, 'C': 15, 'E': 0, 'K': 0, 'B12': 0, 'D': 0, 'folate': 0, 'B6': 0, 'niacin': 0 },
-          minerals: { 'potassium': 18, 'magnesium': 12, 'calcium': 0, 'iron': 0, 'selenium': 0, 'phosphorus': 0, 'zinc': 0, 'manganese': 0, 'omega-3': 0 },
-          health_benefits: ['Quick nutrition', 'Muscle recovery', 'Antioxidants'],
-          meal_type: 'breakfast' as const,
-          preparation_time: 5,
-          ingredients: ['protein powder', 'banana', 'spinach', 'almond milk', 'chia seeds'],
-          cooking_tips: ['Use frozen banana for thickness', 'Add spinach for nutrients'],
-          medical_notes: profile?.allergies.includes('nuts') ? ['Use sunflower seeds instead'] : [],
-          serving_size: '1 large bowl (350ml)',
-          quantity: '1 serving'
-        },
-        {
-          name: 'Quinoa Porridge with Nuts',
-          calories: 330,
-          protein: 12,
-          carbs: 48,
-          fats: 14,
-          fiber: 7,
-          vitamins: { 'E': 10, 'B6': 8, 'K': 0, 'A': 0, 'B12': 0, 'D': 0, 'C': 0, 'folate': 0, 'niacin': 0 },
-          minerals: { 'magnesium': 20, 'iron': 8, 'calcium': 0, 'potassium': 0, 'selenium': 0, 'phosphorus': 0, 'zinc': 0, 'manganese': 0, 'omega-3': 0 },
-          health_benefits: ['Gluten-free', 'Complete protein', 'Fiber rich'],
-          meal_type: 'breakfast' as const,
-          preparation_time: 12,
-          ingredients: ['quinoa', 'almond milk', 'walnuts', 'honey', 'cinnamon'],
-          cooking_tips: ['Rinse quinoa well', 'Toast nuts for flavor'],
-          medical_notes: profile?.dietary_restrictions.includes('gluten') ? ['Excellent gluten-free option'] : [],
-          serving_size: '1 bowl cooked (250g)',
-          quantity: '1 serving'
-        }
-      ],
-      lunch: [
-        {
-          name: 'Mediterranean Quinoa Bowl',
-          calories: 450,
-          protein: 22,
-          carbs: 55,
-          fats: 18,
-          fiber: 10,
-          vitamins: { 'A': 25, 'C': 12, 'E': 0, 'K': 0, 'B12': 0, 'D': 0, 'folate': 0, 'B6': 0, 'niacin': 0 },
-          minerals: { 'iron': 15, 'magnesium': 40, 'calcium': 0, 'potassium': 0, 'selenium': 0, 'phosphorus': 0, 'zinc': 0, 'manganese': 0, 'omega-3': 0 },
-          health_benefits: ['Complete protein', 'Heart health', 'Anti-inflammatory'],
-          meal_type: 'lunch' as const,
-          preparation_time: 15,
-          ingredients: ['quinoa', 'chickpeas', 'cucumber', 'tomatoes', 'feta', 'olive oil', 'lemon'],
-          cooking_tips: ['Rinse quinoa thoroughly', 'Add herbs for flavor'],
-          medical_notes: profile?.allergies.includes('dairy') ? ['Use dairy-free feta alternative'] : [],
-          serving_size: '1 large bowl (350g)',
-          quantity: '1 serving'
-        },
-        {
-          name: 'Asian Stir-Fry with Tofu',
-          calories: 420,
-          protein: 18,
-          carbs: 48,
-          fats: 16,
-          fiber: 8,
-          vitamins: { 'K': 20, 'folate': 30, 'E': 0, 'A': 0, 'B12': 0, 'D': 0, 'C': 0, 'B6': 0, 'niacin': 0 },
-          minerals: { 'iron': 18, 'manganese': 25, 'calcium': 0, 'potassium': 0, 'selenium': 0, 'phosphorus': 0, 'zinc': 0, 'magnesium': 0, 'omega-3': 0 },
-          health_benefits: ['Plant-based protein', 'Colorful vegetables', 'Low saturated fat'],
-          meal_type: 'lunch' as const,
-          preparation_time: 20,
-          ingredients: ['firm tofu', 'mixed vegetables', 'brown rice', 'soy sauce', 'ginger', 'garlic'],
-          cooking_tips: ['Press tofu to remove excess water', 'Use high heat for quick cooking'],
-          medical_notes: profile?.allergies.includes('soy') ? ['Use chicken or tempeh instead'] : [],
-          serving_size: '1 bowl with rice (400g)',
-          quantity: '1 serving'
-        },
-        {
-          name: 'Grilled Chicken Salad',
-          calories: 380,
-          protein: 35,
-          carbs: 25,
-          fats: 14,
-          fiber: 6,
-          vitamins: { 'niacin': 40, 'B6': 20, 'E': 0, 'K': 0, 'A': 0, 'B12': 0, 'D': 0, 'C': 0, 'folate': 0 },
-          minerals: { 'phosphorus': 30, 'selenium': 22, 'calcium': 0, 'iron': 0, 'potassium': 0, 'magnesium': 0, 'zinc': 0, 'manganese': 0, 'omega-3': 0 },
-          health_benefits: ['Lean protein', 'Fresh vegetables', 'Light dressing'],
-          meal_type: 'lunch' as const,
-          preparation_time: 18,
-          ingredients: ['grilled chicken breast', 'mixed greens', 'cherry tomatoes', 'cucumber', 'light vinaigrette'],
-          cooking_tips: ['Grill chicken ahead of time', 'Use homemade dressing to control sodium'],
-          medical_notes: profile?.medical_conditions.includes('hypertension') ? ['Low sodium dressing'] : [],
-          serving_size: '1 large salad (300g)',
-          quantity: '1 serving'
-        },
-        {
-          name: 'Turkey and Avocado Sandwich',
-          calories: 410,
-          protein: 28,
-          carbs: 32,
-          fats: 16,
-          fiber: 9,
-          vitamins: { 'E': 18, 'C': 15, 'K': 0, 'A': 0, 'B12': 0, 'D': 0, 'folate': 0, 'B6': 0, 'niacin': 0 },
-          minerals: { 'potassium': 420, 'magnesium': 38, 'calcium': 0, 'iron': 0, 'selenium': 0, 'phosphorus': 0, 'zinc': 0, 'manganese': 0, 'omega-3': 0 },
-          health_benefits: ['Lean protein', 'Healthy fats', 'Whole grains'],
-          meal_type: 'lunch' as const,
-          preparation_time: 12,
-          ingredients: ['whole grain bread', 'turkey breast', 'avocado', 'lettuce', 'tomato', 'mustard'],
-          cooking_tips: ['Use whole grain bread', 'Add extra vegetables'],
-          medical_notes: profile?.allergies.includes('gluten') ? ['Use gluten-free bread'] : [],
-          serving_size: '1 whole sandwich (250g)',
-          quantity: '1 serving'
-        }
-      ],
-      snacks: [
-        {
-          name: 'Asian-Style Edamame',
-          calories: 180,
-          protein: 16,
-          carbs: 12,
-          fats: 8,
-          fiber: 5,
-          vitamins: { 'folate': 25, 'K': 8, 'E': 0, 'A': 0, 'B12': 0, 'D': 0, 'C': 0, 'B6': 0, 'niacin': 0 },
-          minerals: { 'iron': 10, 'magnesium': 25, 'calcium': 0, 'potassium': 0, 'selenium': 0, 'phosphorus': 0, 'zinc': 0, 'manganese': 0, 'omega-3': 0 },
-          health_benefits: ['Plant protein', 'Fiber-rich', 'Low calorie'],
-          meal_type: 'snacks' as const,
-          preparation_time: 3,
-          ingredients: ['edamame', 'sea salt', 'sesame oil', 'garlic powder'],
-          cooking_tips: ['Steam instead of boil', 'Use minimal oil'],
-          medical_notes: profile?.medical_conditions.includes('hypertension') ? ['Use low sodium seasoning'] : [],
-          serving_size: '1 cup (150g)',
-          quantity: '1 serving'
-        },
-        {
-          name: 'Apple Slices with Almond Butter',
-          calories: 160,
-          protein: 6,
-          carbs: 18,
-          fats: 10,
-          fiber: 4,
-          vitamins: { 'E': 8, 'C': 12, 'K': 0, 'A': 0, 'B12': 0, 'D': 0, 'folate': 0, 'B6': 0, 'niacin': 0 },
-          minerals: { 'potassium': 180, 'magnesium': 20, 'calcium': 0, 'iron': 0, 'selenium': 0, 'phosphorus': 0, 'zinc': 0, 'manganese': 0, 'omega-3': 0 },
-          health_benefits: ['Natural sweetness', 'Healthy fats', 'Fiber'],
-          meal_type: 'snacks' as const,
-          preparation_time: 5,
-          ingredients: ['apple', 'almond butter', 'cinnamon'],
-          cooking_tips: ['Choose crisp apples', 'Use natural almond butter'],
-          medical_notes: profile?.allergies.includes('nuts') ? ['Use sunflower seed butter'] : [],
-          serving_size: '1 apple sliced + 2 tbsp butter (200g)',
-          quantity: '1 serving'
-        },
-        {
-          name: 'Greek Yogurt with Nuts',
-          calories: 190,
-          protein: 14,
-          carbs: 15,
-          fats: 8,
-          fiber: 3,
-          vitamins: { 'B12': 15, 'D': 10, 'E': 0, 'K': 0, 'A': 0, 'C': 0, 'folate': 0, 'B6': 0, 'niacin': 0 },
-          minerals: { 'calcium': 150, 'phosphorus': 20, 'iron': 0, 'potassium': 0, 'magnesium': 0, 'selenium': 0, 'zinc': 0, 'manganese': 0, 'omega-3': 0 },
-          health_benefits: ['Probiotics', 'Protein boost', 'Calcium'],
-          meal_type: 'snacks' as const,
-          preparation_time: 3,
-          ingredients: ['Greek yogurt', 'mixed nuts', 'honey'],
-          cooking_tips: ['Use unsalted nuts', 'Add fresh fruit'],
-          medical_notes: profile?.allergies.includes('dairy') ? ['Use coconut yogurt'] : [],
-          serving_size: '1 container (200g)',
-          quantity: '1 serving'
-        },
-        {
-          name: 'Carrot and Celery Sticks',
-          calories: 80,
-          protein: 2,
-          carbs: 15,
-          fats: 0,
-          fiber: 4,
-          vitamins: { 'A': 30, 'K': 15, 'E': 0, 'B12': 0, 'D': 0, 'C': 0, 'folate': 0, 'B6': 0, 'niacin': 0 },
-          minerals: { 'potassium': 250, 'calcium': 0, 'iron': 0, 'magnesium': 0, 'selenium': 0, 'phosphorus': 0, 'zinc': 0, 'manganese': 0, 'omega-3': 0 },
-          health_benefits: ['Low calorie', 'High fiber', 'Crunchy texture'],
-          meal_type: 'snacks' as const,
-          preparation_time: 5,
-          ingredients: ['carrots', 'celery', 'hummus'],
-          cooking_tips: ['Cut into uniform sticks', 'Serve with protein dip'],
-          medical_notes: [],
-          serving_size: '1 cup sticks (100g)',
-          quantity: '1 serving'
-        }
-      ],
-      dinner: [
-        {
-          name: 'Herb-Crusted Salmon with Sweet Potato',
-          calories: 520,
-          protein: 38,
-          carbs: 45,
-          fats: 22,
-          fiber: 8,
-          vitamins: { 'D': 30, 'B12': 8, 'E': 0, 'K': 0, 'A': 0, 'C': 0, 'folate': 0, 'B6': 0, 'niacin': 0 },
-          minerals: { 'omega-3': 2000, 'selenium': 35, 'calcium': 0, 'iron': 0, 'potassium': 0, 'magnesium': 0, 'phosphorus': 0, 'zinc': 0, 'manganese': 0 },
-          health_benefits: ['Omega-3 fatty acids', 'Vitamin D', 'High-quality protein'],
-          meal_type: 'dinner' as const,
-          preparation_time: 25,
-          ingredients: ['salmon fillet', 'sweet potato', 'herbs', 'olive oil', 'garlic', 'lemon'],
-          cooking_tips: ['Don\'t overcook salmon', 'Use herbs instead of salt'],
-          medical_notes: profile?.health_goals.includes('weight_loss') ? ['Monitor portion sizes'] : [],
-          serving_size: '1 fillet + 1 cup potato (300g)',
-          quantity: '1 serving'
-        },
-        {
-          name: 'Grilled Steak with Roasted Vegetables',
-          calories: 580,
-          protein: 42,
-          carbs: 35,
-          fats: 24,
-          fiber: 7,
-          vitamins: { 'B12': 35, 'E': 0, 'K': 0, 'A': 0, 'C': 0, 'D': 0, 'folate': 0, 'B6': 0, 'niacin': 0 },
-          minerals: { 'zinc': 18, 'phosphorus': 30, 'calcium': 0, 'potassium': 0, 'magnesium': 0, 'selenium': 0, 'iron': 25, 'manganese': 0, 'omega-3': 0 },
-          health_benefits: ['High-quality protein', 'Iron-rich', 'Muscle building'],
-          meal_type: 'dinner' as const,
-          preparation_time: 30,
-          ingredients: ['sirloin steak', 'broccoli', 'carrots', 'bell peppers', 'olive oil', 'garlic'],
-          cooking_tips: ['Let steak rest before serving', 'Season vegetables well'],
-          medical_notes: profile?.medical_conditions.includes('cholesterol') ? ['Choose leaner cuts'] : [],
-          serving_size: '1 steak + 2 cups vegetables (400g)',
-          quantity: '1 serving'
-        },
-        {
-          name: 'Chicken and Vegetable Stir-Fry',
-          calories: 440,
-          protein: 32,
-          carbs: 42,
-          fats: 16,
-          fiber: 6,
-          vitamins: { 'niacin': 25, 'B6': 18, 'E': 0, 'K': 0, 'A': 0, 'C': 0, 'D': 0, 'folate': 0, 'B12': 0 },
-          minerals: { 'phosphorus': 25, 'selenium': 20, 'calcium': 0, 'iron': 0, 'potassium': 0, 'magnesium': 0, 'zinc': 0, 'manganese': 0, 'omega-3': 0 },
-          health_benefits: ['Lean protein', 'Colorful vegetables', 'Quick cooking'],
-          meal_type: 'dinner' as const,
-          preparation_time: 20,
-          ingredients: ['chicken breast', 'mixed vegetables', 'brown rice', 'soy sauce', 'ginger'],
-          cooking_tips: ['Cut vegetables uniformly', 'Use high heat for wok flavor'],
-          medical_notes: profile?.allergies.includes('soy') ? ['Use tamari instead'] : [],
-          serving_size: '1 plate with rice (350g)',
-          quantity: '1 serving'
-        },
-        {
-          name: 'Lentil and Vegetable Curry',
-          calories: 380,
-          protein: 18,
-          carbs: 52,
-          fats: 12,
-          fiber: 14,
-          vitamins: { 'folate': 35, 'E': 0, 'K': 0, 'A': 0, 'B12': 0, 'D': 0, 'C': 0, 'B6': 0, 'niacin': 0 },
-          minerals: { 'magnesium': 45, 'potassium': 380, 'calcium': 0, 'iron': 20, 'selenium': 0, 'phosphorus': 0, 'zinc': 0, 'manganese': 0, 'omega-3': 0 },
-          health_benefits: ['Plant protein', 'High fiber', 'Anti-inflammatory spices'],
-          meal_type: 'dinner' as const,
-          preparation_time: 25,
-          ingredients: ['red lentils', 'coconut milk', 'curry spices', 'mixed vegetables', 'brown rice'],
-          cooking_tips: ['Rinse lentils thoroughly', 'Use fresh spices'],
-          medical_notes: profile?.allergies.includes('legumes') ? ['Use chickpeas instead'] : [],
-          serving_size: '1 bowl curry with rice (400g)',
-          quantity: '1 serving'
-        },
-        {
-          name: 'Basmati Rice with Mixed Vegetables',
-          calories: 320,
-          protein: 8,
-          carbs: 58,
-          fats: 6,
-          fiber: 4,
-          vitamins: { 'E': 10, 'B6': 15, 'K': 0, 'A': 0, 'B12': 0, 'D': 0, 'C': 0, 'folate': 0, 'niacin': 0 },
-          minerals: { 'magnesium': 25, 'potassium': 150, 'calcium': 0, 'iron': 0, 'selenium': 0, 'phosphorus': 0, 'zinc': 0, 'manganese': 0, 'omega-3': 0 },
-          health_benefits: ['Gluten-free grain', 'Energy source', 'Versatile base'],
-          meal_type: 'dinner' as const,
-          preparation_time: 20,
-          ingredients: ['basmati rice', 'mixed vegetables', 'soy sauce', 'sesame oil'],
-          cooking_tips: ['Use fluffy rice variety', 'Add colorful vegetables'],
-          medical_notes: profile?.dietary_restrictions.includes('gluten') ? ['Perfect gluten-free option'] : [],
-          serving_size: '1 cup rice + vegetables (250g)',
-          quantity: '1 serving'
-        },
-        {
-          name: 'Chicken Tikka Masala',
-          calories: 450,
-          protein: 28,
-          carbs: 48,
-          fats: 14,
-          fiber: 6,
-          vitamins: { 'B6': 20, 'niacin': 15, 'E': 0, 'K': 0, 'A': 0, 'B12': 0, 'D': 0, 'C': 0, 'folate': 0 },
-          minerals: { 'iron': 18, 'zinc': 12, 'phosphorus': 20, 'calcium': 0, 'potassium': 0, 'magnesium': 0, 'selenium': 0, 'manganese': 0, 'omega-3': 0 },
-          health_benefits: ['Lean protein', 'Spice blend', 'Metabolism boost'],
-          meal_type: 'dinner' as const,
-          preparation_time: 30,
-          ingredients: ['chicken breast', 'tikka masala spices', 'onions', 'tomatoes', 'basmati rice', 'yogurt'],
-          cooking_tips: ['Marinate chicken overnight', 'Use greek yogurt for creaminess'],
-          medical_notes: profile?.allergies.includes('dairy') ? ['Use coconut yogurt'] : [],
-          serving_size: '1 plate with rice (350g)',
-          quantity: '1 serving'
-        },
-        {
-          name: 'Vegetable Biryani',
-          calories: 420,
-          protein: 16,
-          carbs: 56,
-          fats: 12,
-          fiber: 8,
-          vitamins: { 'A': 25, 'C': 20, 'E': 0, 'K': 0, 'B12': 0, 'D': 0, 'folate': 0, 'B6': 0, 'niacin': 0 },
-          minerals: { 'potassium': 280, 'magnesium': 30, 'calcium': 0, 'iron': 0, 'selenium': 0, 'phosphorus': 0, 'zinc': 0, 'manganese': 0, 'omega-3': 0 },
-          health_benefits: ['Fragrant rice', 'Mixed vegetables', 'Aromatic spices'],
-          meal_type: 'dinner' as const,
-          preparation_time: 35,
-          ingredients: ['basmati rice', 'mixed vegetables', 'biryani spices', 'fried onions', 'herbs'],
-          cooking_tips: ['Use long grain rice', 'Layer spices for flavor'],
-          medical_notes: profile?.health_goals.includes('weight_loss') ? ['Control oil usage'] : [],
-          serving_size: '1 bowl biryani (400g)',
-          quantity: '1 serving'
-        }
-      ]
-    };
-  };
-
-  const getMealsForDay = (day: string, profile: UserProfile | null) => {
-    const mealLibrary = getPersonalizedMealLibrary(profile);
-    const dayIndex = daysOfWeek.indexOf(day);
-    
-    // Enhanced filtering based on comprehensive user data
-    const filterMealsByPreferences = (meals: PersonalizedMeal[]) => {
-      return meals.filter((meal: PersonalizedMeal) => {
-        // For now, return all meals to ensure display
-        return true;
-      });
-    };
-    
-    // Enhanced meal selection with day-based variety
-    const getDaySpecificMeals = () => {
-      // For now, return all meals to ensure display
-      return {
-        breakfast: filterMealsByPreferences(mealLibrary.breakfast),
-        lunch: filterMealsByPreferences(mealLibrary.lunch),
-        snacks: filterMealsByPreferences(mealLibrary.snacks),
-        dinner: filterMealsByPreferences(mealLibrary.dinner)
-      };
-      
-      switch(day) {
-        case 'Monday':
-          return {
-            breakfast: filterMealsByPreferences(mealLibrary.breakfast).filter(m => m.protein >= 15),
-            lunch: filterMealsByPreferences(mealLibrary.lunch).filter(m => m.name.includes('Bowl') || m.name.includes('Salad')),
-            snacks: filterMealsByPreferences(mealLibrary.snacks).filter(m => m.calories < 200),
-            dinner: filterMealsByPreferences(mealLibrary.dinner).filter(m => m.protein >= 30)
-          };
-        case 'Tuesday':
-          return {
-            breakfast: filterMealsByPreferences(mealLibrary.breakfast).filter(m => m.name.includes('Oatmeal') || m.name.includes('Yogurt')),
-            lunch: filterMealsByPreferences(mealLibrary.lunch).filter(m => m.name.includes('Stir-fry') || m.name.includes('Wrap')),
-            snacks: filterMealsByPreferences(mealLibrary.snacks).filter(m => m.name.includes('Edamame') || m.name.includes('Apple')),
-            dinner: filterMealsByPreferences(mealLibrary.dinner).filter(m => m.name.includes('Salmon') || m.name.includes('Chicken'))
-          };
-        case 'Wednesday':
-          return {
-            breakfast: filterMealsByPreferences(mealLibrary.breakfast).filter(m => m.name.includes('Eggs') || m.name.includes('Smoothie')),
-            lunch: filterMealsByPreferences(mealLibrary.lunch).filter(m => m.name.includes('Quinoa') || m.name.includes('Mediterranean')),
-            snacks: filterMealsByPreferences(mealLibrary.snacks).filter(m => m.name.includes('Nuts') || m.name.includes('Yogurt')),
-            dinner: filterMealsByPreferences(mealLibrary.dinner).filter(m => m.name.includes('Steak') || m.name.includes('Lentil'))
-          };
-        case 'Thursday':
-          return {
-            breakfast: filterMealsByPreferences(mealLibrary.breakfast).filter(m => m.name.includes('Avocado') || m.name.includes('Toast')),
-            lunch: filterMealsByPreferences(mealLibrary.lunch).filter(m => m.name.includes('Asian') || m.name.includes('Tofu')),
-            snacks: filterMealsByPreferences(mealLibrary.snacks).filter(m => m.name.includes('Berries') || m.name.includes('Seeds')),
-            dinner: filterMealsByPreferences(mealLibrary.dinner).filter(m => m.name.includes('Fish') || m.name.includes('Vegetable'))
-          };
-        case 'Friday':
-          return {
-            breakfast: filterMealsByPreferences(mealLibrary.breakfast).filter(m => m.name.includes('Protein') || m.name.includes('Bowl')),
-            lunch: filterMealsByPreferences(mealLibrary.lunch).filter(m => m.name.includes('Sandwich') || m.name.includes('Chicken')),
-            snacks: filterMealsByPreferences(mealLibrary.snacks).filter(m => m.name.includes('Energy') || m.name.includes('Bar')),
-            dinner: filterMealsByPreferences(mealLibrary.dinner).filter(m => m.name.includes('Special') || m.name.includes('Treat'))
-          };
-        case 'Saturday':
-          return {
-            breakfast: filterMealsByPreferences(mealLibrary.breakfast).filter(m => m.name.includes('Pancakes') || m.name.includes('Waffles')),
-            lunch: filterMealsByPreferences(mealLibrary.lunch).filter(m => m.name.includes('Burger') || m.name.includes('Pizza')),
-            snacks: filterMealsByPreferences(mealLibrary.snacks).filter(m => m.name.includes('Trail') || m.name.includes('Mix')),
-            dinner: filterMealsByPreferences(mealLibrary.dinner).filter(m => m.name.includes('BBQ') || m.name.includes('Grilled'))
-          };
-        case 'Sunday':
-          return {
-            breakfast: filterMealsByPreferences(mealLibrary.breakfast).filter(m => m.name.includes('French') || m.name.includes('Toast')),
-            lunch: filterMealsByPreferences(mealLibrary.lunch).filter(m => m.name.includes('Roast') || m.name.includes('Comfort')),
-            snacks: filterMealsByPreferences(mealLibrary.snacks).filter(m => m.name.includes('Fruit') || m.name.includes('Salad')),
-            dinner: filterMealsByPreferences(mealLibrary.dinner).filter(m => m.name.includes('Family') || m.name.includes('Traditional'))
-          };
-        default:
-          return {
-            breakfast: filterMealsByPreferences(mealLibrary.breakfast),
-            lunch: filterMealsByPreferences(mealLibrary.lunch),
-            snacks: filterMealsByPreferences(mealLibrary.snacks),
-            dinner: filterMealsByPreferences(mealLibrary.dinner)
-          };
-      }
-    };
-    
-    const daySpecificMeals = getDaySpecificMeals();
-    
-    // Select meals based on day index with fallback
-    const selectMealByIndex = (mealArray: any[], index: number) => {
-      const availableMeals = mealArray.length > 0 ? mealArray : [mealLibrary.breakfast[0], mealLibrary.lunch[0], mealLibrary.snacks[0], mealLibrary.dinner[0]];
-      return availableMeals[index % availableMeals.length];
-    };
-    
-    return {
-      breakfast: [selectMealByIndex(daySpecificMeals.breakfast, dayIndex)],
-      lunch: [selectMealByIndex(daySpecificMeals.lunch, dayIndex)],
-      snacks: [selectMealByIndex(daySpecificMeals.snacks, dayIndex)],
-      dinner: [selectMealByIndex(daySpecificMeals.dinner, dayIndex)]
-    };
-  };
-
   const calculateHealthScoreForDay = (meals: any, profile: UserProfile | null): number => {
     let score = 70;
-    const totalProtein = meals.breakfast[0].protein + meals.lunch[0].protein + meals.snacks[0].protein + meals.dinner[0].protein;
-    const totalFiber = meals.breakfast[0].fiber + meals.lunch[0].fiber + meals.snacks[0].fiber + meals.dinner[0].fiber;
+    const bucket = (items: any[]) => Array.isArray(items) ? items : [];
+    const allMeals = [...bucket(meals.breakfast), ...bucket(meals.lunch), ...bucket(meals.snacks), ...bucket(meals.dinner)];
+    const totalProtein = allMeals.reduce((sum, m) => sum + Number(m?.protein || 0), 0);
+    const totalFiber = allMeals.reduce((sum, m) => sum + Number(m?.fiber || 0), 0);
     
-    if (profile && totalProtein >= profile.weight * 1.6) score += 10;
+    if (profile && totalProtein >= profile.weight_kg * 1.6) score += 10;
     if (totalFiber >= 25) score += 10;
     if (profile?.health_goals.includes('weight_loss') && totalProtein > 100) score += 5;
     
     return Math.min(100, score);
   };
 
-  const getPersonalizedNotesForDay = (day: string, profile: UserProfile | null): string[] => {
+  const getPersonalizedNotesForDay = (
+    day: string,
+    profile: UserProfile | null,
+    mealsForDay?: {
+      breakfast: PersonalizedMeal[];
+      lunch: PersonalizedMeal[];
+      snacks: PersonalizedMeal[];
+      dinner: PersonalizedMeal[];
+    }
+  ): string[] => {
     const notes: string[] = [];
-    
-    if (profile) {
-      // Medical condition specific notes
-      if (profile.medical_conditions.includes('hypertension')) {
-        notes.push('❤️ Heart Health: Low sodium options selected');
-        if (profile.medical_records?.blood_pressure) {
-          notes.push(`📊 Blood Pressure: ${profile.medical_records.blood_pressure} - monitoring sodium intake`);
-        }
-      }
-      
-      if (profile.medical_conditions.includes('diabetes')) {
-        notes.push('🩸 Blood Sugar: Low glycemic index foods prioritized');
-        if (profile.medical_records?.blood_sugar) {
-          notes.push(`📊 Blood Sugar: ${profile.medical_records.blood_sugar} - carb-controlled meals`);
-        }
-      }
-      
-      if (profile.medical_conditions.includes('cholesterol')) {
-        notes.push('🥑 Cholesterol: Lean protein sources selected');
-        if (profile.medical_records?.cholesterol) {
-          notes.push(`📊 Cholesterol: ${profile.medical_records.cholesterol} - limiting saturated fats`);
-        }
-      }
-      
-      // Medication interactions
-      if (profile.medical_records?.medications?.includes('statin')) {
-        notes.push('💊 Medication Alert: Avoiding grapefruit due to statin interaction');
-      }
-      
-      // Supplement considerations
-      if (profile.medical_records?.supplements && profile.medical_records.supplements.length > 0) {
-        notes.push(`💊 Supplements: ${profile.medical_records.supplements.join(', ')} - meals complement supplementation`);
-      }
-      
-      // Age-specific recommendations
-      if (profile.age > 50) {
-        notes.push('🦴 Bone Health: Increased calcium and vitamin D sources');
-        notes.push('💪 Muscle Preservation: Higher protein portions for sarcopenia prevention');
-      }
-      
-      if (profile.age > 65) {
-        notes.push('👵 Senior Nutrition: Softer textures, smaller portions');
-        notes.push('💧 Hydration Focus: Increased water intake reminders');
-      }
-      
-      // Health goals specific notes
-      if (profile.health_goals.includes('muscle_gain')) {
-        notes.push('💪 Muscle Building: High protein portions timed around workouts');
-        notes.push('⏱️ Recovery: Including anti-inflammatory foods');
-      }
-      
-      if (profile.health_goals.includes('weight_loss')) {
-        notes.push('⚖️ Weight Management: Portion control with high volume foods');
-        notes.push('🥗 Satiety: High fiber and protein for fullness');
-      }
-      
-      // Allergy-specific notes
-      if (profile.allergies.includes('dairy')) {
-        notes.push('🥛 Dairy-Free: All meals prepared without dairy products');
-      }
-      
-      if (profile.allergies.includes('nuts')) {
-        notes.push('🌰 Nut-Free: Nut-free alternatives used');
-      }
-      
-      if (profile.allergies.includes('gluten')) {
-        notes.push('🌾 Gluten-Free: Certified gluten-free options selected');
-      }
-      
-      // Dietary restriction notes
-      if (profile.dietary_restrictions.includes('vegetarian')) {
-        notes.push('🌱 Vegetarian: Plant-based protein sources emphasized');
-      }
-      
-      if (profile.dietary_restrictions.includes('vegan')) {
-        notes.push('🌱 Vegan: Complete plant-based nutrition');
-      }
-      
-      if (profile.dietary_restrictions.includes('keto')) {
-        notes.push('🥑 Keto-Friendly: Low carb, high healthy fat options');
-      }
-      
-      // Preferred foods integration
-      if (profile.preferred_foods?.length > 0) {
-        const todayPreferredFoods = profile.preferred_foods.filter(food => 
-          day.toLowerCase().includes('monday') && food.toLowerCase().includes('salmon') ||
-          day.toLowerCase().includes('tuesday') && food.toLowerCase().includes('quinoa') ||
-          day.toLowerCase().includes('wednesday') && food.toLowerCase().includes('avocado') ||
-          day.toLowerCase().includes('thursday') && food.toLowerCase().includes('berries') ||
-          day.toLowerCase().includes('friday') && food.toLowerCase().includes('nuts') ||
-          day.toLowerCase().includes('saturday') && food.toLowerCase().includes('olive oil') ||
-          day.toLowerCase().includes('sunday') && food.toLowerCase().includes('spinach')
-        );
-        
-        if (todayPreferredFoods.length > 0) {
-          notes.push(`🎯 Today's Favorites: Featuring ${todayPreferredFoods.join(', ')}`);
-        }
-      }
-      
-      // Foods to avoid alerts
-      if (profile.foods_to_avoid?.length > 0) {
-        notes.push(`🚫 Foods Avoided: ${profile.foods_to_avoid.join(', ')}`);
-      }
-      
-      // Day-specific motivational notes
-      switch(day) {
-        case 'Monday':
-          notes.push('🚀 Monday Fuel: High-energy start to your week');
-          notes.push('💪 Monday Focus: Building momentum for the week ahead');
-          break;
-        case 'Tuesday':
-          notes.push('⚡ Tuesday Power: Sustained energy for busy schedule');
-          break;
-        case 'Wednesday':
-          notes.push('🏃️ Wednesday Wellness: Mid-week nutrition check-in');
-          break;
-        case 'Thursday':
-          notes.push('🎯 Thursday Target: Pushing towards weekly goals');
-          break;
-        case 'Friday':
-          notes.push('🎉 Friday Treat: Balanced meal before weekend');
-          notes.push('🍕 Friday Reward: Well-deserved nutritious indulgence');
-          break;
-        case 'Saturday':
-          notes.push('🌟 Saturday Active: Fuel for weekend activities');
-          notes.push('🏃️ Saturday Recovery: Preparing for Sunday rest');
-          break;
-        case 'Sunday':
-          notes.push('🌿 Sunday Restoration: Nourishing body and mind');
-          notes.push('👨‍👩‍👧‍👦 Sunday Family: Perfect for shared meals');
-          break;
+
+    if (!profile) return notes;
+
+    const plannedMeals = mealsForDay || { breakfast: [], lunch: [], snacks: [], dinner: [] };
+    const plannedFoodNames = [
+      ...plannedMeals.breakfast,
+      ...plannedMeals.lunch,
+      ...plannedMeals.snacks,
+      ...plannedMeals.dinner
+    ].map((m) => String(m.name || '').toLowerCase());
+
+    const avoidTokens = dedupe([...(profile.foods_to_avoid || []), ...(profile.allergies || [])])
+      .map((x) => x.toLowerCase())
+      .filter(Boolean);
+    const preferredTokens = (profile.preferred_foods || [])
+      .map((x) => x.toLowerCase())
+      .filter(Boolean);
+
+    const mealContainsToken = (token: string) => plannedFoodNames.some((name) => name.includes(token));
+    const matchedPreferred = preferredTokens.filter((token) => mealContainsToken(token));
+    const missingPreferred = preferredTokens.filter((token) => !mealContainsToken(token));
+    const conflictingPlanned = avoidTokens.filter((token) => mealContainsToken(token));
+
+    if (profile.medical_conditions.includes('hypertension')) {
+      notes.push('Heart health: low-sodium meal options prioritized.');
+      if (profile.medical_records?.blood_pressure) {
+        notes.push(`Blood pressure context: ${profile.medical_records.blood_pressure} (sodium kept controlled).`);
       }
     }
-    
+
+    if (profile.medical_conditions.includes('diabetes')) {
+      notes.push('Blood sugar: lower glycemic load meal pattern selected.');
+      if (profile.medical_records?.blood_sugar) {
+        notes.push(`Blood sugar context: ${profile.medical_records.blood_sugar} (carbs distributed across meals).`);
+      }
+    }
+
+    if (profile.medical_conditions.includes('cholesterol')) {
+      notes.push('Cholesterol: leaner protein and lower saturated fat choices selected.');
+      if (profile.medical_records?.cholesterol) {
+        notes.push(`Cholesterol context: ${profile.medical_records.cholesterol} (fat quality prioritized).`);
+      }
+    }
+
+    if (profile.health_goals.includes('muscle_gain')) {
+      notes.push('Muscle goal: higher-protein portions placed around training windows.');
+    }
+
+    if (profile.health_goals.includes('weight_loss')) {
+      notes.push('Weight goal: calorie-aware portions with high satiety foods.');
+    }
+
+    if (profile.dietary_restrictions.length > 0) {
+      notes.push(`Diet style applied: ${profile.dietary_restrictions.join(', ')}.`);
+    }
+
+    if (matchedPreferred.length > 0) {
+      notes.push(`Included from your regular foods: ${matchedPreferred.slice(0, 3).join(', ')}.`);
+    } else if (missingPreferred.length > 0) {
+      notes.push(`From your usual foods, consider adding: ${missingPreferred.slice(0, 3).join(', ')}.`);
+    }
+
+    if (avoidTokens.length > 0) {
+      notes.push(`Avoid list enforced: ${avoidTokens.slice(0, 5).join(', ')}.`);
+    }
+
+    if (conflictingPlanned.length > 0) {
+      notes.push(`Safety check: remove/replace these from add-ons today: ${conflictingPlanned.slice(0, 3).join(', ')}.`);
+    }
+
+    notes.push(`${day} plan is aligned to your health profile and latest medical context.`);
     return notes;
   };
 
+  const selectedDayPlan = mealPlan.find(plan => plan.day === selectedDay) || mealPlan[0] || null;
+  const effectiveSelectedDay = selectedDayPlan?.day || selectedDay;
+  const selectedDayDate = getDateForDay(selectedDay);
+
+  const getServingDisplayText = (meal: PersonalizedMeal): string => {
+    const quantity = String(meal.quantity || '').trim();
+    const servingSize = String(meal.serving_size || '').trim();
+    const gramsMatch = servingSize.match(/\(([^)]*g)\)/i) || servingSize.match(/(\d+\s?g(?:ms)?)\b/i);
+    const gramsText = gramsMatch?.[1] ? String(gramsMatch[1]).replace(/[()]/g, '') : '';
+    const isCountBased = /(fruit|piece|pieces|roti|chapati|phulka|idli|dosa|paratha|samosa)/i.test(quantity);
+
+    if (isCountBased) {
+      return gramsText ? `${quantity} (~${gramsText})` : quantity;
+    }
+
+    if (gramsText) return gramsText;
+    if (servingSize && servingSize.toLowerCase() !== 'standard portion') return servingSize;
+    if (quantity && quantity.toLowerCase() !== '1 serving') return quantity;
+    return '250 g';
+  };
+
+  const calculateConsumedPlannedCalories = (
+    dayPlan: PersonalizedDailyPlan | null,
+    completedIds: string[]
+  ): number => {
+    if (!dayPlan) return 0;
+    const selected = new Set(completedIds);
+    let total = 0;
+    for (const mealType of mealTypes) {
+      const items = (dayPlan.meals?.[mealType] || []) as PersonalizedMeal[];
+      items.forEach((meal, idx) => {
+        const id = buildMealItemId(mealType, idx, meal.name);
+        if (selected.has(id)) {
+          total += Number(meal.calories || 0);
+        }
+      });
+    }
+    return Math.round(total);
+  };
+
+  const getTotalMealItems = (dayPlan: PersonalizedDailyPlan | null): number => {
+    if (!dayPlan) return 0;
+    return mealTypes.reduce((sum, mealType) => sum + (dayPlan.meals[mealType]?.length || 0), 0);
+  };
+
+  const persistAdherence = async (
+    nextCompletedIds: string[],
+    nextExtraFoods: AdherenceExtraFood[],
+    nextWaterMl: number
+  ) => {
+    if (!selectedDayPlan) return;
+    try {
+      const payload = {
+        date: selectedDayDate,
+        planned_calories: Number(selectedDayPlan.total_calories || 0),
+        consumed_planned_calories: calculateConsumedPlannedCalories(selectedDayPlan, nextCompletedIds),
+        completed_items_count: nextCompletedIds.length,
+        total_items_count: getTotalMealItems(selectedDayPlan),
+        completed_item_ids: nextCompletedIds,
+        extra_foods: nextExtraFoods.map((f) => ({
+          name: String(f.name || '').trim(),
+          calories: Number(f.calories || 0),
+        })).filter((f) => f.name && f.calories > 0),
+        water_ml: Math.max(0, Number(nextWaterMl || 0)),
+        water_target_ml: getWaterTargetMl(),
+      };
+      await api.post('/adherence/day', payload);
+      localStorage.setItem('adherence:last_updated', new Date().toISOString());
+      window.dispatchEvent(new Event('adherence-updated'));
+      setAdherenceStatus('Saved');
+      setTimeout(() => setAdherenceStatus(null), 1200);
+    } catch (err) {
+      console.error('Failed to save adherence:', err);
+      setAdherenceStatus('Save failed');
+      setTimeout(() => setAdherenceStatus(null), 1800);
+    }
+  };
+
+  useEffect(() => {
+    if (!selectedDayPlan) return;
+    const loadDayAdherence = async () => {
+      try {
+        const response = await api.get(`/adherence/day/${selectedDayDate}`);
+        const data = response.data || {};
+        setCompletedItemIds(Array.isArray(data.completed_item_ids) ? data.completed_item_ids : []);
+        setExtraFoods(Array.isArray(data.extra_foods) ? data.extra_foods : []);
+        setWaterMl(Number(data.water_ml || 0));
+      } catch (err) {
+        setCompletedItemIds([]);
+        setExtraFoods([]);
+        setWaterMl(0);
+      }
+    };
+    loadDayAdherence();
+  }, [selectedDayDate, selectedDayPlan]);
+
+  const consumedPlannedCalories = calculateConsumedPlannedCalories(selectedDayPlan, completedItemIds);
+  const consumedExtraCalories = extraFoods.reduce((sum, x) => sum + Number(x.calories || 0), 0);
+  const consumedTotalCalories = consumedPlannedCalories + consumedExtraCalories;
+  const foodProgressPercent = selectedDayPlan?.total_calories
+    ? Math.min(100, Math.round((consumedTotalCalories / Number(selectedDayPlan.total_calories)) * 100))
+    : 0;
+  const waterTargetMl = getWaterTargetMl();
+  const waterProgressPercent = Math.min(100, Math.round((waterMl / Math.max(1, waterTargetMl)) * 100));
+  const getLabTrend = (labName: string) =>
+    reportComparison.diseaseTrendAlerts.find((a) => normalizeText(a.lab) === normalizeText(labName));
+  const findLabValue = (...aliases: string[]): string | null => {
+    const entries = Object.entries(reportInsights.labs || {});
+    if (entries.length === 0) return null;
+    for (const alias of aliases) {
+      const normalizedAlias = normalizeText(alias);
+      const hit = entries.find(([k]) => normalizeText(k) === normalizedAlias);
+      if (hit && hit[1]) return String(hit[1]);
+    }
+    for (const alias of aliases) {
+      const normalizedAlias = normalizeText(alias);
+      const looseHit = entries.find(([k]) => {
+        const nk = normalizeText(k);
+        return nk.includes(normalizedAlias) || normalizedAlias.includes(nk);
+      });
+      if (looseHit && looseHit[1]) return String(looseHit[1]);
+    }
+    return null;
+  };
+  const bpTrend = getLabTrend('blood pressure');
+  const sugarTrend = getLabTrend('blood sugar');
+  const bpValue =
+    findLabValue('blood pressure', 'blood_pressure', 'bp') ||
+    userProfile?.medical_records?.blood_pressure ||
+    'Not available';
+  const sugarValue =
+    findLabValue('blood sugar', 'blood_sugar', 'glucose', 'fasting glucose', 'fbs', 'rbs') ||
+    userProfile?.medical_records?.blood_sugar ||
+    'Not available';
+  const weightGoalLabel = userProfile?.health_goals?.length ? userProfile.health_goals.join(', ') : 'General wellness';
+  const dietStyleLabel = realProfile?.diet_type ? String(realProfile.diet_type) : 'Not specified';
+  const bpStatusText = bpTrend ? (bpTrend.direction === 'up' ? 'Rising' : bpTrend.direction === 'down' ? 'Improving' : 'Stable') : 'Tracked';
+  const sugarStatusText = sugarTrend ? (sugarTrend.direction === 'up' ? 'Rising' : sugarTrend.direction === 'down' ? 'Improving' : 'Stable') : 'Tracked';
+  const bpStatusClass = bpTrend?.direction === 'down' ? 'good' : 'neutral';
+  const sugarStatusClass = sugarTrend?.direction === 'down' ? 'good' : 'neutral';
+
   return (
-    <div style={{ padding: '20px', maxWidth: '1400px', margin: '0 auto', fontFamily: 'Inter, system-ui, sans-serif' }}>
+    <div className="personalized-reco-shell" style={{ padding: '14px', maxWidth: '1320px', margin: '0 auto', fontFamily: 'Sora, sans-serif' }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&display=swap');
+        .personalized-reco-shell {
+          background: #f4f6f8;
+          border: 1px solid #e2e8f0;
+          border-radius: 24px;
+        }
+        .personalized-grid { display: grid; grid-template-columns: 1fr 350px; gap: 24px; width: 100%; }
+        .plan-day-wrap { margin-bottom: 24px; }
+        .plan-day-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+        .plan-main-card,
+        .plan-side-card {
+          background: #ffffff;
+          border: 1px solid #dbe3ef;
+          box-shadow: 0 16px 28px -24px rgba(15, 23, 42, 0.45);
+          border-radius: 20px;
+        }
+        .plan-main-card { padding: 26px; }
+        .plan-side-card { padding: 22px; height: fit-content; }
+        .tracker-card {
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          border-radius: 14px;
+          padding: 16px;
+          margin-bottom: 18px;
+        }
+        .meal-type-card {
+          background: #f8fafc;
+          padding: 18px;
+          border-radius: 15px;
+          border: 1px solid #dbe3ef;
+        }
+        .meal-type-badge {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 26px;
+          height: 26px;
+          padding: 0 8px;
+          border-radius: 999px;
+          background: #e2e8f0;
+          color: #0f172a;
+          font-size: 0.72rem;
+          font-weight: 800;
+          text-transform: uppercase;
+        }
+        .meal-item-card {
+          background: #ffffff;
+          padding: 18px;
+          border-radius: 12px;
+          border: 1px solid #dbe3ef;
+          margin-bottom: 14px;
+          box-shadow: 0 10px 18px -16px rgba(15, 23, 42, 0.55);
+        }
+        .note-box {
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          border-radius: 14px;
+          padding: 16px;
+          margin-bottom: 16px;
+        }
+        .note-box--recommendations {
+          background: #fffcf5;
+          border-color: #f3e8cf;
+          border-left: 4px solid #b45309;
+        }
+        .note-box--profile {
+          background: #f8fafc;
+          border-color: #dce5f0;
+          border-left: 4px solid #334155;
+        }
+        .note-box--medical {
+          background: #fff7f7;
+          border-color: #f5dcdc;
+          border-left: 4px solid #b91c1c;
+        }
+        .note-box--supplements {
+          background: #f7fafc;
+          border-color: #d5e3ee;
+          border-left: 4px solid #0f766e;
+        }
+        .note-box-title {
+          font-size: 0.92rem;
+          font-weight: 800;
+          color: #0f172a;
+          margin-bottom: 10px;
+          letter-spacing: 0.01em;
+        }
+        .note-box-content {
+          font-size: 0.85rem;
+          color: #334155;
+          line-height: 1.5;
+        }
+        .note-box-content strong {
+          color: #0f172a;
+          font-weight: 700;
+        }
+        @media (max-width: 1080px) {
+          .personalized-grid { grid-template-columns: 1fr; gap: 16px; }
+        }
+      `}</style>
       {/* Day Selector */}
-      <div style={{ marginBottom: '30px' }}>
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center' }}>
+      <div className="plan-day-wrap">
+        <div className="plan-day-row">
           {daysOfWeek.map((day) => (
             <button
               key={day}
               onClick={() => setSelectedDay(day)}
               style={{
-                padding: '12px 20px',
-                border: 'none',
-                borderRadius: '25px',
-                fontWeight: 600,
+                padding: '10px 16px',
+                border: selectedDay === day ? '1px solid #0f172a' : '1px solid #cbd5e1',
+                borderRadius: '999px',
+                fontWeight: 700,
                 fontSize: '0.9rem',
                 cursor: 'pointer',
                 transition: 'all 0.3s ease',
-                backgroundColor: selectedDay === day ? '#4361ee' : '#f1f5f9',
+                backgroundColor: selectedDay === day ? '#0f172a' : '#ffffff',
                 color: selectedDay === day ? '#ffffff' : '#475569',
-                boxShadow: selectedDay === day ? '0 4px 12px rgba(67, 97, 238, 0.3)' : '0 2px 4px rgba(0,0,0,0.05)'
+                boxShadow: selectedDay === day ? '0 10px 20px -14px rgba(15, 23, 42, 0.95)' : '0 2px 4px rgba(0,0,0,0.03)'
               }}
             >
               {day}
@@ -876,40 +1018,34 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
 
       {loading ? (
         <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>
-          <div>⌛ Generating Personalized Meal Plan...</div>
+          <div>Loading personalized meal plan...</div>
         </div>
       ) : error ? (
         <div style={{ padding: '40px', textAlign: 'center' }}>
           <div style={{ color: '#ef4444', marginBottom: '15px' }}>{error}</div>
           <button 
             onClick={fetchPersonalizedMealPlan}
-            style={{ padding: '10px 20px', backgroundColor: '#4361ee', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 700 }}
+            style={{ padding: '10px 20px', backgroundColor: '#0f172a', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 700 }}
           >
             Retry
           </button>
         </div>
       ) : (
         (() => {
-          const selectedDayPlan = mealPlan.find(plan => plan.day === selectedDay);
-          if (!selectedDayPlan) return null;
+          if (!selectedDayPlan) {
+            return (
+              <div style={{ padding: '24px', border: '1px solid #dbe3ef', borderRadius: '14px', background: '#ffffff', color: '#475569' }}>
+                No food recommendations available yet. Click Retry to regenerate your plan.
+              </div>
+            );
+          }
           
           return (
           <>
-          <div style={{ 
-            display: 'grid',
-            gridTemplateColumns: '1fr 350px',
-            gap: '30px',
-            width: '100%'
-          }}>
+          <div className="personalized-grid">
               {/* Main Meal Content */}
-              <div style={{ 
-                background: '#ffffff', 
-                padding: '30px', 
-                borderRadius: '20px', 
-                border: '2px solid #e2e8f0',
-                boxShadow: '0 4px 6px rgba(0,0,0,0.05)'
-              }}>
-                <div style={{ 
+              <div className="plan-main-card">
+          <div style={{ 
                   display: 'flex', 
             justifyContent: 'space-between', 
             alignItems: 'center', 
@@ -918,7 +1054,7 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
             gap: '15px'
           }}>
             <h3 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 800, color: '#1e293b' }}>
-              🍽️ {selectedDay}'s Personalized Meals
+              {effectiveSelectedDay}'s Personalized Meals
             </h3>
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontSize: '1rem', color: '#64748b', marginBottom: '5px' }}>
@@ -930,14 +1066,176 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gap: '20px' }}>
+          <div className="nutrition-sidebar">
+            {/* Header Section */}
+            <div className="sidebar-header">
+              <div className="header-content">
+                <div className="header-icon">📊</div>
+                <div>
+                  <h3 className="header-title">Daily Intake Tracker</h3>
+                  {adherenceStatus && (
+                    <div className={`status-badge ${adherenceStatus.includes('ahead') ? 'status-success' : adherenceStatus.includes('behind') ? 'status-warning' : 'status-info'}`}>
+                      {adherenceStatus}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Progress Cards Grid */}
+            <div className="progress-grid">
+              <div className="progress-card calories-card">
+                <div className="progress-icon">🔥</div>
+                <div className="progress-content">
+                  <div className="progress-label">Consumed Calories</div>
+                  <div className="progress-value">{Math.round(consumedTotalCalories)}</div>
+                  <div className="progress-unit">kcal</div>
+                </div>
+              </div>
+
+              <div className="progress-card food-card">
+                <div className="progress-icon">🍽</div>
+                <div className="progress-content">
+                  <div className="progress-label">Food Progress</div>
+                  <div className="progress-value">{foodProgressPercent}%</div>
+                  <div className="progress-bar">
+                    <div 
+                      className="progress-fill" 
+                      style={{ width: `${foodProgressPercent}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="progress-card water-card">
+                <div className="progress-icon">💧</div>
+                <div className="progress-content">
+                  <div className="progress-label">Water Progress</div>
+                  <div className="progress-value">{waterProgressPercent}%</div>
+                  <div className="progress-bar">
+                    <div 
+                      className="progress-fill water-fill" 
+                      style={{ width: `${waterProgressPercent}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Add Food Section */}
+            <div className="add-food-section">
+              <div className="section-header">
+                <div className="section-icon">➕</div>
+                <h4 className="section-title">Add Other Food</h4>
+              </div>
+              
+              <div className="food-input-group">
+                <input
+                  value={newFoodName}
+                  onChange={(e) => setNewFoodName(e.target.value)}
+                  placeholder="Food name"
+                  className="food-input"
+                />
+                <input
+                  type="number"
+                  value={newFoodCalories}
+                  onChange={(e) => setNewFoodCalories(e.target.value === '' ? '' : Number(e.target.value))}
+                  placeholder="Calories"
+                  className="calories-input"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!newFoodName.trim() || !newFoodCalories || Number(newFoodCalories) <= 0) return;
+                    const next = [...extraFoods, { name: newFoodName.trim(), calories: Number(newFoodCalories) }];
+                    setExtraFoods(next);
+                    setNewFoodName('');
+                    setNewFoodCalories('');
+                    persistAdherence(completedItemIds, next, waterMl);
+                  }}
+                  className="add-food-btn"
+                  disabled={!newFoodName.trim() || !newFoodCalories || Number(newFoodCalories) <= 0}
+                >
+                  Add Food
+                </button>
+              </div>
+
+              {extraFoods.length > 0 && (
+                <div className="extra-foods-list">
+                  {extraFoods.map((f, i) => (
+                    <div key={`${f.name}-${i}`} className="extra-food-item">
+                      <span className="food-name">{f.name}</span>
+                      <span className="food-calories">{Math.round(f.calories)} kcal</span>
+                      <button
+                        onClick={() => {
+                          const next = extraFoods.filter((_, idx) => idx !== i);
+                          setExtraFoods(next);
+                          persistAdherence(completedItemIds, next, waterMl);
+                        }}
+                        className="remove-food-btn"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Water Intake Section */}
+            <div className="water-section">
+              <div className="section-header">
+                <div className="section-icon">💧</div>
+                <h4 className="section-title">Water Intake</h4>
+              </div>
+              
+              <div className="water-controls">
+                <div className="water-display">
+                  <span className="current-water">{waterMl}</span>
+                  <span className="water-target">/ {waterTargetMl} ml</span>
+                </div>
+                
+                <div className="water-buttons">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = Math.max(0, waterMl + 250);
+                      setWaterMl(next);
+                      persistAdherence(completedItemIds, extraFoods, next);
+                    }}
+                    className="water-btn increment-btn"
+                  >
+                    +250 ml
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = waterTargetMl;
+                      setWaterMl(next);
+                      persistAdherence(completedItemIds, extraFoods, next);
+                    }}
+                    className="water-btn target-btn"
+                  >
+                    Mark Target Done
+                  </button>
+                </div>
+                
+                <input
+                  type="number"
+                  value={waterMl}
+                  onChange={(e) => setWaterMl(Number(e.target.value || 0))}
+                  onBlur={() => persistAdherence(completedItemIds, extraFoods, waterMl)}
+                  className="water-input"
+                  min="0"
+                  max="5000"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gap: '16px' }}>
             {['breakfast', 'lunch', 'snacks', 'dinner'].map((mealType) => (
-              <div key={mealType} style={{ 
-                background: '#f8fafc', 
-                padding: '20px', 
-                borderRadius: '15px', 
-                border: '1px solid #e2e8f0'
-              }}>
+              <div key={mealType} className="meal-type-card">
                 <h4 style={{ 
                   margin: '0 0 15px 0', 
                   fontSize: '1.1rem', 
@@ -948,21 +1246,45 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
                   alignItems: 'center',
                   gap: '8px'
                 }}>
-                  {mealType === 'breakfast' && '🌅'}
-                  {mealType === 'lunch' && '☀️'}
-                  {mealType === 'snacks' && '🍿'}
-                  {mealType === 'dinner' && '🌙'}
+                  {mealType === 'breakfast' && <span className="meal-type-badge">B</span>}
+                  {mealType === 'lunch' && <span className="meal-type-badge">L</span>}
+                  {mealType === 'snacks' && <span className="meal-type-badge">S</span>}
+                  {mealType === 'dinner' && <span className="meal-type-badge">D</span>}
                   {mealType}
                 </h4>
-                {(selectedDayPlan?.meals?.[mealType as keyof typeof selectedDayPlan.meals] as PersonalizedMeal[])?.map((meal: PersonalizedMeal, idx: number) => (
-                  <div key={idx} style={{ 
-                    background: '#ffffff', 
-                    padding: '20px', 
-                    borderRadius: '12px', 
-                    border: '1px solid #e2e8f0',
-                    marginBottom: '15px',
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
-                  }}>
+                {(() => {
+                  const planned = (selectedDayPlan?.meals?.[mealType as keyof typeof selectedDayPlan.meals] as PersonalizedMeal[]) || [];
+                  if (planned.length === 0) {
+                    return (
+                      <div style={{ fontSize: '0.88rem', color: '#64748b', fontWeight: 600, padding: '6px 0 2px' }}>
+                        No recommended items for this meal slot.
+                      </div>
+                    );
+                  }
+                  return planned.map((meal: PersonalizedMeal, idx: number) => (
+                  <div key={idx} className="meal-item-card">
+                    {(() => {
+                      const itemId = buildMealItemId(mealType, idx, meal.name);
+                      const checked = completedItemIds.includes(itemId);
+                      return (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {
+                              const next = checked
+                                ? completedItemIds.filter((id) => id !== itemId)
+                                : [...completedItemIds, itemId];
+                              setCompletedItemIds(next);
+                              persistAdherence(next, extraFoods, waterMl);
+                            }}
+                          />
+                          <span style={{ fontSize: '0.82rem', fontWeight: 700, color: checked ? '#059669' : '#475569' }}>
+                            Mark as finished
+                          </span>
+                        </label>
+                      );
+                    })()}
                     <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '1.1rem', marginBottom: '12px' }}>
                       {meal.name}
                     </div>
@@ -972,7 +1294,7 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
                         {meal.calories} cal • {meal.protein}g protein
                       </span>
                       <span style={{ fontSize: '0.9rem', color: '#059669', fontWeight: 600 }}>
-                        🥄 {meal.serving_size} • 🍽️ {meal.quantity}
+                        Serving: {getServingDisplayText(meal)}
                       </span>
                     </div>
 
@@ -994,7 +1316,7 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
                       <div>
                         <div style={{ fontSize: '0.8rem', opacity: 0.8, fontWeight: 600, marginBottom: '4px', color: '#64748b' }}>FIBER</div>
                         <span style={{ fontSize: '0.8rem', color: '#10b981', background: 'rgba(16,185,129,0.1)', padding: '2px 6px', borderRadius: '4px' }}>
-                          {meal.fiber}g
+                          {Number(meal.fiber || 0).toFixed(1)}g
                         </span>
                       </div>
                     </div>
@@ -1007,88 +1329,183 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
-                        ⏱️ {meal.preparation_time} mins
+                      <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Prep: {meal.preparation_time} mins
                       </span>
-                      <span style={{ fontSize: '0.8rem', color: '#059669', fontWeight: 600 }}>
-                        🎯 {meal.health_benefits[0]}
+                      <span style={{ fontSize: '0.8rem', color: '#334155', fontWeight: 600 }}>Benefit: {meal.health_benefits[0]}
                       </span>
                     </div>
                   </div>
-                ))}
+                ));
+                })()}
               </div>
             ))}
           </div>
         </div>
 
         {/* Personalized Notes Sidebar */}
-        <div style={{ 
-          background: '#ffffff', 
-          padding: '25px', 
-          borderRadius: '20px', 
-          border: '2px solid #e2e8f0',
-          boxShadow: '0 4px 6px rgba(0,0,0,0.05)',
-          height: 'fit-content'
-        }}>
-          <h3 style={{ 
-            margin: '0 0 20px 0', 
-            fontSize: '1.3rem', 
-            fontWeight: 800, 
-            color: '#1e293b',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px'
-          }}>
-            📝 Personalized Notes
-          </h3>
-
-          {(selectedDayPlan?.personalized_notes?.length || 0) > 0 && (
-            <div style={{ 
-              background: '#fef3c7', 
-              padding: '20px', 
-              borderRadius: '15px', 
-              marginBottom: '20px',
-              border: '1px solid #f59e0b'
-            }}>
-              <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#92400e', marginBottom: '10px' }}>
-                🎯 Today's Recommendations
+        <div className="plan-side-card">
+          {/* Enhanced Header with Health Focus */}
+          <div className="notes-header">
+            <div className="notes-header-icon"></div>
+            <div className="notes-header-content">
+              <h3 className="notes-title">Personalized Health Updates</h3>
+              <div className="day-focus">
+                <span className="day-label">{effectiveSelectedDay}</span>
+                <span className="focus-badge">Heart Health Focus</span>
               </div>
-              {selectedDayPlan?.personalized_notes?.map((note: string, idx: number) => (
-                <div key={idx} style={{ 
-                  fontSize: '0.85rem', 
-                  color: '#78350f', 
-                  marginBottom: '8px',
-                  lineHeight: 1.4
-                }}>
-                  {note}
-                </div>
-              ))}
+            </div>
+          </div>
+
+          {/* Health Status Cards */}
+          <div className="health-status-grid">
+            <div className="health-card blood-pressure-card">
+              <div className="health-icon">💗</div>
+              <div className="health-content">
+                <div className="health-title">Blood Pressure</div>
+                <div className="health-value">{bpValue}</div>
+                <div className={`health-status ${bpStatusClass}`}>{bpStatusText}</div>
+                <div className="health-detail">{bpTrend ? `${bpTrend.previousValue} -> ${bpTrend.currentValue}` : 'Waiting for trend data from reports'}</div>
+              </div>
+            </div>
+
+            <div className="health-card blood-sugar-card">
+              <div className="health-icon">🩸</div>
+              <div className="health-content">
+                <div className="health-title">Blood Sugar</div>
+                <div className="health-value">{sugarValue}</div>
+                <div className={`health-status ${sugarStatusClass}`}>{sugarStatusText}</div>
+                <div className="health-detail">{sugarTrend ? `${sugarTrend.previousValue} -> ${sugarTrend.currentValue}` : 'Waiting for trend data from reports'}</div>
+              </div>
+            </div>
+
+            <div className="health-card weight-card">
+              <div className="health-icon">⚖️</div>
+              <div className="health-content">
+                <div className="health-title">Weight Goal</div>
+                <div className="health-value">{weightGoalLabel}</div>
+                <div className="health-status neutral">Active Goal</div>
+                <div className="health-detail">Current weight: {userProfile?.weight_kg ? `${userProfile.weight_kg} kg` : 'Not available'}</div>
+              </div>
+            </div>
+
+            <div className="health-card diet-card">
+              <div className="health-icon">🥗</div>
+              <div className="health-content">
+                <div className="health-title">Diet Style</div>
+                <div className="health-value">{dietStyleLabel}</div>
+                <div className="health-status neutral">Customized</div>
+                <div className="health-detail">Protein target: {selectedDayPlan?.total_protein ? `${Math.round(selectedDayPlan.total_protein)} g/day` : 'Calculated from plan'}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Daily Recommendations */}
+          {(selectedDayPlan?.personalized_notes?.length || 0) > 0 && (
+            <div className="recommendations-section">
+              <div className="section-header recommendations-header">
+                <div className="section-icon">📋</div>
+                <h4 className="section-title">{effectiveSelectedDay} Meal Plan</h4>
+              </div>
+              <div className="recommendations-list">
+                {selectedDayPlan?.personalized_notes?.map((note: string, idx: number) => (
+                  <div key={idx} className="recommendation-item">
+                    <div className="recommendation-priority">
+                      <div className="priority-indicator high"></div>
+                      <span className="priority-text">Priority</span>
+                    </div>
+                    <div className="recommendation-content">
+                      {note}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
-          {/* User Profile Summary */}
-          <div style={{ 
-            background: '#f0fdf4', 
-            padding: '20px', 
-            borderRadius: '15px', 
-            marginBottom: '20px',
-            border: '1px solid #22c55e'
-          }}>
-            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#15803d', marginBottom: '10px' }}>
-              👤 Your Profile
+          <div className="note-box note-box--recommendations">
+            <div className="note-box-title">Report Comparison Summary</div>
+            <div className="note-box-content">
+              
+              {reportComparison.latestIsDuplicate ? ' Latest upload appears to be already uploaded before.' : ''}
+              {reportComparison.duplicateGroups.length > 0 && (
+                <div style={{ marginTop: '8px', fontSize: '0.84rem' }}>
+                  {reportComparison.duplicateGroups.slice(0, 2).map((group, idx) => (
+                    <div key={idx} style={{ marginBottom: '4px' }}>
+                      {group.filenames.join(', ')} ({group.count} uploads)
+                    </div>
+                  ))}
+                </div>
+              )}
+              {reportComparison.diseaseTrendAlerts.length > 0 && (
+                <div style={{ marginTop: '10px', display: 'grid', gap: '6px' }}>
+                  {reportComparison.diseaseTrendAlerts.slice(0, 6).map((alert, idx) => (
+                    <div
+                      key={`${alert.condition}-${alert.lab}-${idx}`}
+                      style={{
+                        border: `1px solid ${alert.level === 'warning' ? '#fecaca' : alert.level === 'good' ? '#bbf7d0' : '#cbd5e1'}`,
+                        background: alert.level === 'warning' ? '#fef2f2' : alert.level === 'good' ? '#f0fdf4' : '#f8fafc',
+                        color: alert.level === 'warning' ? '#991b1b' : alert.level === 'good' ? '#166534' : '#334155',
+                        borderRadius: '10px',
+                        padding: '8px 10px',
+                        fontSize: '0.8rem',
+                        fontWeight: 600
+                      }}
+                    >
+                      {alert.level === 'warning' ? 'ALERT:' : alert.level === 'good' ? 'Improved:' : 'Stable:'} {alert.condition} - {alert.lab} {alert.direction === 'up' ? 'went up' : alert.direction === 'down' ? 'fell down' : 'did not change'} ({alert.previousValue} {'->'} {alert.currentValue}{alert.changePercent !== null ? `, ${alert.changePercent > 0 ? '+' : ''}${alert.changePercent}%` : ''})
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            <div style={{ fontSize: '0.85rem', color: '#166534', lineHeight: 1.4 }}>
+          </div>
+
+          {/* Food Integration */}
+          <div className="food-integration-section">
+            <div className="section-header food-header">
+              <div className="section-icon">🍽</div>
+              <h4 className="section-title">Food Integration</h4>
+            </div>
+            
+            <div className="food-categories">
+              <div className="food-category included">
+                <div className="category-title">Included Foods</div>
+                <div className="food-tags">
+                  <span className="food-tag primary">🍛 Roti</span>
+                  <span className="food-tag primary">🍛 Curry</span>
+                  <span className="food-tag primary">🍛 Rice</span>
+                </div>
+              </div>
+
+              <div className="food-category avoided">
+                <div className="category-title">Avoid Foods</div>
+                <div className="food-tags">
+                  <span className="food-tag danger">🚫 Butter</span>
+                  <span className="food-tag danger">🚫 Sugary Drinks</span>
+                  <span className="food-tag danger">🚫 Chips</span>
+                  <span className="food-tag danger">🚫 Ice Cream</span>
+                  <span className="food-tag danger">🚫 Red Meat</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* User Profile Summary */}
+          <div className="note-box note-box--profile">
+            <div className="note-box-title">
+              Your Profile
+            </div>
+            <div className="note-box-content">
               <div style={{ marginBottom: '8px' }}>
                 <strong>Age:</strong> {userProfile?.age || 'Not specified'}
               </div>
               <div style={{ marginBottom: '8px' }}>
-                <strong>Weight:</strong> {userProfile?.weight || 'Not specified'} kg
+                <strong>Weight:</strong> {userProfile?.weight_kg || 'Not specified'} kg
               </div>
               <div style={{ marginBottom: '8px' }}>
-                <strong>Height:</strong> {userProfile?.height || 'Not specified'} cm
+                <strong>Height:</strong> {userProfile?.height_cm || 'Not specified'} cm
               </div>
               <div style={{ marginBottom: '8px' }}>
-                <strong>Activity Level:</strong> {userProfile?.activity_level || 'Not specified'}
+                <strong>Activity Level:</strong> {userProfile?.lifestyle_level || 'Not specified'}
               </div>
               <div style={{ marginBottom: '8px' }}>
                 <strong>Health Goals:</strong> {userProfile?.health_goals?.join(', ') || 'Not specified'}
@@ -1116,17 +1533,11 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
 
           {/* Medical Conditions */}
           {(userProfile?.medical_conditions?.length || 0) > 0 && (
-            <div style={{ 
-              background: '#fef2f2', 
-              padding: '20px', 
-              borderRadius: '15px', 
-              marginBottom: '20px',
-              border: '1px solid #ef4444'
-            }}>
-              <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#991b1b', marginBottom: '10px' }}>
-                🏥 Medical Conditions
+            <div className="note-box note-box--medical">
+              <div className="note-box-title">
+                Medical Conditions
               </div>
-              <div style={{ fontSize: '0.85rem', color: '#7f1d1d', lineHeight: 1.4 }}>
+              <div className="note-box-content">
                 {userProfile?.medical_conditions?.join(', ') || ''}
               </div>
             </div>
@@ -1134,16 +1545,11 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
 
           {/* Supplements */}
           {(userProfile?.supplements?.length || 0) > 0 && (
-            <div style={{ 
-              background: '#f0f9ff', 
-              padding: '20px', 
-              borderRadius: '15px', 
-              border: '1px solid #0ea5e9'
-            }}>
-              <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#0369a1', marginBottom: '10px' }}>
-                💊 Supplements
+            <div className="note-box note-box--supplements">
+              <div className="note-box-title">
+                Supplements
               </div>
-              <div style={{ fontSize: '0.85rem', color: '#075985', lineHeight: 1.4 }}>
+              <div className="note-box-content">
                 {userProfile?.supplements?.join(', ') || ''}
               </div>
             </div>
@@ -1157,5 +1563,607 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
     </div>
   );
 };
+
+// CSS-in-JS styles for elegant nutrition sidebar
+const sidebarStyles = `
+.nutrition-sidebar {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  border: 1px solid #e2e8f0;
+}
+
+.sidebar-header {
+  margin-bottom: 24px;
+}
+
+.header-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-icon {
+  font-size: 1.5rem;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  border-radius: 12px;
+  color: white;
+}
+
+.header-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.status-badge {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.status-success {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+}
+
+.status-warning {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: white;
+}
+
+.status-info {
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  color: white;
+}
+
+.progress-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.progress-card {
+  background: white;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  border: 1px solid #f1f5f9;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.progress-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+}
+
+.progress-icon {
+  font-size: 1.8rem;
+  margin-bottom: 8px;
+  text-align: center;
+  background: transparent;
+  color: inherit;
+}
+
+.progress-content {
+  text-align: center;
+}
+
+.progress-label {
+  font-size: 0.8rem;
+  color: #64748b;
+  font-weight: 600;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.progress-value {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #1e293b;
+  margin-bottom: 8px;
+}
+
+.progress-unit {
+  font-size: 0.75rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 6px;
+  background: #f1f5f9;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.calories-card .progress-fill {
+  background: linear-gradient(90deg, #f59e0b 0%, #d97706 100%);
+}
+
+.food-card .progress-fill {
+  background: linear-gradient(90deg, #10b981 0%, #059669 100%);
+}
+
+.water-fill {
+  background: linear-gradient(90deg, #06b6d4 0%, #3b82f6 100%);
+}
+
+.add-food-section {
+  margin-bottom: 24px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.section-icon {
+  font-size: 1.2rem;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: #8b5cf6;
+}
+
+.section-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.food-input-group {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.food-input, .calories-input {
+  padding: 12px 16px;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  background: white;
+}
+
+.food-input:focus, .calories-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.food-input {
+  flex: 1;
+  min-width: 140px;
+}
+
+.calories-input {
+  width: 110px;
+}
+
+.add-food-btn {
+  padding: 12px 20px;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.add-food-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.add-food-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.extra-foods-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.extra-food-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: white;
+  border: 1px solid #f1f5f9;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.extra-food-item:hover {
+  border-color: #3b82f6;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+}
+
+.food-name {
+  font-weight: 600;
+  color: #1e293b;
+  flex: 1;
+}
+
+.food-calories {
+  font-size: 0.85rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.remove-food-btn {
+  background: none;
+  border: none;
+  color: #ef4444;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  font-size: 1rem;
+}
+
+.remove-food-btn:hover {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.water-section {
+  margin-bottom: 24px;
+}
+
+.water-controls {
+  margin-bottom: 16px;
+}
+
+.water-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 16px;
+  background: white;
+  border-radius: 12px;
+  border: 1px solid #f1f5f9;
+}
+
+.current-water {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: #06b6d4;
+}
+
+.water-target {
+  font-size: 1rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.water-buttons {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.water-btn {
+  padding: 10px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: white;
+  color: #374151;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.85rem;
+}
+
+.water-btn:hover {
+  border-color: #3b82f6;
+  color: #3b82f6;
+  transform: translateY(-1px);
+}
+
+.increment-btn {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  border-color: #059669;
+}
+
+.target-btn {
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  color: white;
+  border-color: #8b5cf6;
+}
+
+.water-input {
+  width: 100%;
+  padding: 12px 16px;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 1rem;
+  text-align: center;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  background: white;
+}
+
+.water-input:focus {
+  outline: none;
+  border-color: #06b6d4;
+  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.1);
+}
+
+// Enhanced Personalized Notes Styles
+.notes-header {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0e7ff 100%);
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 24px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+}
+
+.notes-header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.notes-title {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: #1e293b;
+}
+
+.day-focus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.day-label {
+  font-size: 1rem;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.focus-badge {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.health-status-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.health-card {
+  background: white;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  border: 1px solid #f1f5f9;
+  transition: transform 0.2s ease;
+}
+
+.health-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+}
+
+.health-title {
+  font-size: 0.9rem;
+  color: #374151;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.health-value {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #1e293b;
+  margin-bottom: 4px;
+}
+
+.health-status {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.health-status.good {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+}
+
+.health-status.neutral {
+  background: linear-gradient(135deg, #6b7280 0%, #8b5cf6 100%);
+  color: white;
+}
+
+.health-detail {
+  font-size: 0.8rem;
+  color: #64748b;
+  line-height: 1.3;
+}
+
+.recommendations-section {
+  margin-bottom: 24px;
+}
+
+.recommendations-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.recommendation-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border-left: 4px solid #10b981;
+  margin-bottom: 8px;
+  transition: all 0.2s ease;
+}
+
+.recommendation-item:hover {
+  background: #f0f9ff;
+  border-left-color: #059669;
+  transform: translateX(4px);
+}
+
+.recommendation-priority {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.priority-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+}
+
+.priority-text {
+  font-size: 0.7rem;
+  color: #10b981;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.recommendation-content {
+  flex: 1;
+  font-size: 0.9rem;
+  color: #1e293b;
+  line-height: 1.4;
+}
+
+.food-integration-section {
+  margin-bottom: 24px;
+}
+
+.food-categories {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+.food-category {
+  background: white;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  border: 1px solid #f1f5f9;
+}
+
+.category-title {
+  font-size: 0.9rem;
+  color: #374151;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.food-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.food-tag {
+  font-size: 0.8rem;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.food-tag.primary {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+}
+
+.food-tag.danger {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: white;
+}
+
+@media (max-width: 768px) {
+  .health-status-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .food-categories {
+    grid-template-columns: 1fr;
+  }
+  
+  .recommendation-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+`;
+
+// Inject styles into document
+if (typeof document !== 'undefined') {
+  const styleSheet = document.createElement('style');
+  styleSheet.textContent = sidebarStyles;
+  document.head.appendChild(styleSheet);
+}
 
 export default PersonalizedMealPlanDisplay;

@@ -12,6 +12,7 @@ from ..deps import get_db, get_current_user
 from ..models import Profile, Report
 from .. import logic
 import json
+import re
 
 router = APIRouter()
 
@@ -22,6 +23,7 @@ class MealItem(BaseModel):
     protein: float
     carbs: float
     fats: float
+    fiber: float = 0.0
     preparation_time: int  # minutes
     difficulty: str  # easy, medium, hard
 
@@ -69,25 +71,29 @@ def calculate_bmi_category(bmi: float) -> str:
     else:
         return "obese"
 
-def should_update_plan(profile: Profile, latest_report: Optional[Report] = None) -> tuple[bool, str]:
+def should_update_plan(
+    profile: Profile,
+    latest_report: Optional[Report] = None,
+    current_plan: Optional[WeeklyMealPlan] = None
+) -> tuple[bool, str]:
     """Determine if meal plan should be updated based on health changes"""
     
     reasons = []
     
     # Check weight change
     if profile.weight_kg:
-        current_plan = weekly_plans.get("current")
-        if current_plan and abs(profile.weight_kg - current_plan.based_on_weight) >= health_triggers.weight_change_threshold:
-            reasons.append(f"Weight changed by {abs(profile.weight_kg - current_plan.based_on_weight):.1f}kg")
+        plan = current_plan or weekly_plans.get("current")
+        if plan and abs(profile.weight_kg - plan.based_on_weight) >= health_triggers.weight_change_threshold:
+            reasons.append(f"Weight changed by {abs(profile.weight_kg - plan.based_on_weight):.1f}kg")
     
     # Check BMI category change
     if profile.height_cm and profile.weight_kg:
         current_bmi = logic.compute_bmi(profile.height_cm, profile.weight_kg)
         current_category = calculate_bmi_category(current_bmi)
         
-        current_plan = weekly_plans.get("current")
-        if current_plan:
-            previous_bmi = logic.compute_bmi(profile.height_cm, current_plan.based_on_weight)
+        plan = current_plan or weekly_plans.get("current")
+        if plan:
+            previous_bmi = logic.compute_bmi(profile.height_cm, plan.based_on_weight)
             previous_category = calculate_bmi_category(previous_bmi)
             
             if current_category != previous_category:
@@ -95,13 +101,132 @@ def should_update_plan(profile: Profile, latest_report: Optional[Report] = None)
     
     # Check new health report
     if latest_report and health_triggers.new_health_condition:
-        current_plan = weekly_plans.get("current")
-        if current_plan:
-            if latest_report.uploaded_at > current_plan.last_updated:
+        plan = current_plan or weekly_plans.get("current")
+        if plan:
+            if latest_report.created_at > plan.last_updated:
                 reasons.append("New health report uploaded")
     
     should_update = len(reasons) > 0
     return should_update, "; ".join(reasons) if reasons else ""
+
+def _build_plan_signature(profile_data: Dict[str, Any], latest_report: Optional[Report]) -> str:
+    """Stable signature for detecting profile/report changes that require plan regeneration."""
+    report_marker = ""
+    if latest_report:
+        report_marker = f"{getattr(latest_report, 'id', '')}:{getattr(latest_report, 'created_at', '')}"
+    base = {
+        "weight_kg": profile_data.get("weight_kg"),
+        "height_cm": profile_data.get("height_cm"),
+        "lifestyle_level": profile_data.get("lifestyle_level"),
+        "motive": profile_data.get("motive"),
+        "diet_type": profile_data.get("diet_type"),
+        "health_diseases": profile_data.get("health_diseases"),
+        "food_allergies": profile_data.get("food_allergies"),
+        "breakfast": profile_data.get("breakfast"),
+        "lunch": profile_data.get("lunch"),
+        "snacks": profile_data.get("snacks"),
+        "dinner": profile_data.get("dinner"),
+        "target_area": profile_data.get("target_area"),
+        "age": profile_data.get("age"),
+        "gender": profile_data.get("gender"),
+        "report": report_marker,
+    }
+    return json.dumps(base, sort_keys=True, default=str)
+
+def _split_to_list(value: Optional[str]) -> List[str]:
+    if not value:
+        return []
+    parts = re.split(r"[,\n;/|]+", str(value))
+    return [p.strip() for p in parts if p and p.strip()]
+
+def _dedupe_keep_order(items: List[str]) -> List[str]:
+    seen = set()
+    out: List[str] = []
+    for raw in items:
+        v = raw.strip()
+        key = v.lower()
+        if not v or key in seen:
+            continue
+        seen.add(key)
+        out.append(v)
+    return out
+
+def _parse_report_context(latest_report: Optional[Report]) -> Dict[str, Any]:
+    """
+    Parse report.summary and extract medical context for planning.
+    Supports JSON object/string or plain text fallbacks.
+    """
+    ctx: Dict[str, Any] = {
+        "diseases": [],
+        "allergies": [],
+        "consume": [],
+        "avoid": [],
+        "summary_text": ""
+    }
+    if not latest_report or not latest_report.summary:
+        return ctx
+
+    raw = latest_report.summary
+    data: Any = raw
+    try:
+        if isinstance(raw, str):
+            data = json.loads(raw)
+    except Exception:
+        data = raw
+
+    if isinstance(data, dict):
+        disease_keys = ["diseases", "conditions", "health_conditions", "medical_conditions"]
+        allergy_keys = ["allergies", "food_allergies"]
+        consume_keys = ["foods_to_consume", "consume", "recommended_foods", "eat_more"]
+        avoid_keys = ["foods_to_avoid", "avoid", "avoid_foods", "avoid_items", "restricted_foods"]
+
+        diseases: List[str] = []
+        allergies: List[str] = []
+        consume: List[str] = []
+        avoid: List[str] = []
+
+        for k in disease_keys:
+            val = data.get(k)
+            if isinstance(val, list):
+                diseases.extend([str(x) for x in val if x])
+            elif isinstance(val, str):
+                diseases.extend(_split_to_list(val))
+        for k in allergy_keys:
+            val = data.get(k)
+            if isinstance(val, list):
+                allergies.extend([str(x) for x in val if x])
+            elif isinstance(val, str):
+                allergies.extend(_split_to_list(val))
+        for k in consume_keys:
+            val = data.get(k)
+            if isinstance(val, list):
+                consume.extend([str(x) for x in val if x])
+            elif isinstance(val, str):
+                consume.extend(_split_to_list(val))
+        for k in avoid_keys:
+            val = data.get(k)
+            if isinstance(val, list):
+                avoid.extend([str(x) for x in val if x])
+            elif isinstance(val, str):
+                avoid.extend(_split_to_list(val))
+
+        ctx["diseases"] = _dedupe_keep_order(diseases)
+        ctx["allergies"] = _dedupe_keep_order(allergies)
+        ctx["consume"] = _dedupe_keep_order(consume)
+        ctx["avoid"] = _dedupe_keep_order(avoid)
+        ctx["summary_text"] = json.dumps(data)
+        return ctx
+
+    text = str(data)
+    text_lower = text.lower()
+    known_conditions = [
+        "diabetes", "hypertension", "cholesterol", "heart", "thyroid",
+        "kidney", "liver", "pcos", "anemia", "obesity"
+    ]
+    found = [c for c in known_conditions if c in text_lower]
+    ctx["diseases"] = _dedupe_keep_order(found)
+    ctx["summary_text"] = text
+    return ctx
 
 def generate_meal_item(food_name: str, food_data: Dict) -> MealItem:
     """Generate a meal item from food data"""
@@ -111,9 +236,104 @@ def generate_meal_item(food_name: str, food_data: Dict) -> MealItem:
         protein=float(food_data.get('protein', 0)),
         carbs=float(food_data.get('carbs', 0)),
         fats=float(food_data.get('fat', 0)),
+        fiber=float(food_data.get('fiber', food_data.get('fibre', 0)) or 0),
         preparation_time=15,  # Default prep time
         difficulty="easy"
     )
+
+RICE_TOKENS = ["rice", "pulao", "biryani", "khichdi", "fried rice", "jeera rice"]
+DAL_TOKENS = ["dal", "dhal", "sambar", "sambhar"]
+
+CURRY_ROTATION = [
+    {"name": "Mixed Vegetable Curry", "calories": 180, "protein": 5, "carbs": 18, "fats": 8},
+    {"name": "Palak Paneer", "calories": 260, "protein": 14, "carbs": 12, "fats": 18},
+    {"name": "Kadai Vegetable Curry", "calories": 210, "protein": 6, "carbs": 20, "fats": 10},
+    {"name": "Chana Masala", "calories": 230, "protein": 11, "carbs": 30, "fats": 8},
+    {"name": "Paneer Bhurji", "calories": 250, "protein": 15, "carbs": 10, "fats": 16},
+    {"name": "Aloo Gobi Curry", "calories": 190, "protein": 5, "carbs": 26, "fats": 8},
+    {"name": "Mushroom Masala", "calories": 200, "protein": 7, "carbs": 14, "fats": 11},
+]
+
+def _is_rice_item(name: str) -> bool:
+    n = (name or "").lower()
+    return any(tok in n for tok in RICE_TOKENS)
+
+def _is_dal_item(name: str) -> bool:
+    n = (name or "").lower()
+    return any(tok in n for tok in DAL_TOKENS)
+
+def _is_curry_item(name: str) -> bool:
+    n = (name or "").lower()
+    return any(tok in n for tok in ["curry", "masala", "korma", "kofta", "paneer", "chana", "gobi", "mushroom"])
+
+def _rotating_curry(day_index: int, offset: int = 0) -> MealItem:
+    item = CURRY_ROTATION[(day_index + offset) % len(CURRY_ROTATION)]
+    return MealItem(
+        name=item["name"],
+        calories=int(item["calories"]),
+        protein=float(item["protein"]),
+        carbs=float(item["carbs"]),
+        fats=float(item["fats"]),
+        preparation_time=25,
+        difficulty="medium",
+    )
+
+def _enforce_meal_rules(
+    day_index: int,
+    snack_foods: List[MealItem],
+    lunch_foods: List[MealItem],
+    dinner_foods: List[MealItem],
+) -> tuple[List[MealItem], List[MealItem], List[MealItem]]:
+    # Rule 1: No rice-based foods in snacks.
+    snack_foods = [s for s in snack_foods if not _is_rice_item(s.name)]
+
+    # Rule 2: If rice exists in lunch/dinner, pair with varied non-dal curry.
+    def normalize_rice_pair(items: List[MealItem], offset: int) -> List[MealItem]:
+        # Remove duplicate meal names to reduce repetition within the same meal slot.
+        deduped: List[MealItem] = []
+        seen = set()
+        for m in items:
+            key = (m.name or "").strip().lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(m)
+        items = deduped
+
+        # Convert generic repeated "rice + curry" names into rotating curry variants.
+        rotated_curry = _rotating_curry(day_index, offset)
+        for m in items:
+            n = (m.name or "").strip().lower()
+            if "rice and dal" in n or "rice with mixed vegetable curry" in n:
+                m.name = f"Steamed Rice with {rotated_curry.name}"
+
+        # Dedupe again because normalized names can collide.
+        deduped_after_normalize: List[MealItem] = []
+        seen2 = set()
+        for m in items:
+            key = (m.name or "").strip().lower()
+            if key in seen2:
+                continue
+            seen2.add(key)
+            deduped_after_normalize.append(m)
+        items = deduped_after_normalize
+
+        if not any(_is_rice_item(m.name) for m in items):
+            return items
+
+        dal_idx = next((i for i, m in enumerate(items) if _is_dal_item(m.name)), None)
+        curry_idx = next((i for i, m in enumerate(items) if _is_curry_item(m.name) and not _is_dal_item(m.name)), None)
+        curry_item = _rotating_curry(day_index, offset)
+
+        if dal_idx is not None:
+            items[dal_idx] = curry_item
+        elif curry_idx is None:
+            items.append(curry_item)
+        return items
+
+    lunch_foods = normalize_rice_pair(lunch_foods, 0)
+    dinner_foods = normalize_rice_pair(dinner_foods, 3)
+    return snack_foods, lunch_foods, dinner_foods
 
 def select_foods_for_target(food_list, target_calories):
     """Select foods from a list to match target calories as closely as possible"""
@@ -126,7 +346,9 @@ def select_foods_for_target(food_list, target_calories):
     for food in food_list:
         meal_items.append(MealItem(
             name=food['name'], calories=food['calories'], protein=food['protein'],
-            carbs=food['carbs'], fats=food['fat'], preparation_time=20, difficulty="medium"
+            carbs=food['carbs'], fats=food['fat'],
+            fiber=float(food.get('fiber', food.get('fibre', 0)) or 0),
+            preparation_time=20, difficulty="medium"
         ))
     
     # Sort by calorie density (moderate calories first for balance)
@@ -168,17 +390,17 @@ def adjust_calories_to_target(breakfast_foods, lunch_foods, snack_foods, dinner_
             if remaining_calories > 400:
                 # Add a substantial meal item
                 additional_foods.append(MealItem(
-                    name="Rice and Dal", calories=350, protein=12, carbs=60, fats=8,
+                    name="Rice with Mixed Vegetable Curry", calories=350, protein=12, carbs=60, fats=8,
                     preparation_time=25, difficulty="medium"
                 ))
                 remaining_calories -= 350
             elif remaining_calories > 200:
                 # Add a moderate meal item
                 additional_foods.append(MealItem(
-                    name="Chicken Curry", calories=280, protein=25, carbs=15, fats=12,
+                    name="Mixed Bean Curry", calories=260, protein=14, carbs=28, fats=9,
                     preparation_time=30, difficulty="medium"
                 ))
-                remaining_calories -= 280
+                remaining_calories -= 260
             elif remaining_calories > 100:
                 # Add a snack
                 additional_foods.append(MealItem(
@@ -241,29 +463,46 @@ def adjust_calories_to_target(breakfast_foods, lunch_foods, snack_foods, dinner_
     print(f"DEBUG: Final calories after adjustment: {new_total_calories}")
     return new_total_calories, new_total_protein, new_total_carbs, new_total_fats
 
-def generate_daily_meals(target_calories: int, target_protein: float, 
-                        diet_type: str, diseases: List[str], allergies: List[str], 
-                        day_index: int = 0, personalized_recommendations: List = None) -> DailyMealPlan:
+def generate_daily_meals(
+    target_calories: int,
+    target_protein: float,
+    diet_type: str,
+    diseases: List[str],
+    allergies: List[str],
+    day_index: int = 0,
+    personalized_recommendations: List = None,
+    user_context: Optional[Dict[str, Any]] = None,
+    report_context: Optional[Dict[str, Any]] = None,
+    recent_foods: Optional[List[str]] = None
+) -> DailyMealPlan:
     """Generate meals for a single day using personalized nutrition recommendations"""
     
     try:
+        daily_fruits = ["Apple", "Orange", "Papaya", "Guava", "Pomegranate", "Pear", "Kiwi"]
+        fallback_fruit = daily_fruits[day_index % len(daily_fruits)]
+        user_context = user_context or {}
+        report_context = report_context or {}
+        report_avoid = [str(x).strip() for x in report_context.get("avoid", []) if str(x).strip()]
+        effective_allergies = _dedupe_keep_order(allergies + report_avoid)
+
         # Get personalized food recommendations from the existing nutrition system
         user_data = {
-            "height_cm": 170,
-            "weight_kg": 70,
-            "motive": "fitness",
+            "height_cm": user_context.get("height_cm", 170),
+            "weight_kg": user_context.get("weight_kg", 70),
+            "motive": user_context.get("motive", "fitness"),
             "diet_type": diet_type,
             "diseases": ", ".join(diseases) if diseases else "",
-            "allergies": ", ".join(allergies) if allergies else "",
-            "level": "beginner",
-            "lifestyle_level": "sedentary",
-            "target_area": "",
-            "breakfast": "",
-            "lunch": "",
-            "snacks": "",
-            "dinner": "",
-            "age": 30,
-            "gender": "male"
+            "allergies": ", ".join(effective_allergies) if effective_allergies else "",
+            "level": user_context.get("level", "beginner"),
+            "lifestyle_level": user_context.get("lifestyle_level", "sedentary"),
+            "target_area": user_context.get("target_area", ""),
+            "breakfast": user_context.get("breakfast", ""),
+            "lunch": user_context.get("lunch", ""),
+            "snacks": user_context.get("snacks", ""),
+            "dinner": user_context.get("dinner", ""),
+            "age": user_context.get("age", 30),
+            "gender": user_context.get("gender", "male"),
+            "water_consumption_l": user_context.get("water_consumption_l", 2.5)
         }
         
         # Generate recommendations using the existing logic
@@ -273,6 +512,45 @@ def generate_daily_meals(target_calories: int, target_protein: float,
         # If personalized recommendations are provided, use them
         if personalized_recommendations:
             diet_recommendations = personalized_recommendations
+
+        # Improve day-to-day diversity while preserving safety constraints.
+        recent_tokens = {str(x).strip().lower() for x in (recent_foods or []) if str(x).strip()}
+        if diet_recommendations:
+            deduped_recs: List[Dict[str, Any]] = []
+            seen_names = set()
+            for meal in diet_recommendations:
+                name = str(meal.get("food_name", "")).strip()
+                if not name:
+                    continue
+                key = name.lower()
+                if key in seen_names:
+                    continue
+                seen_names.add(key)
+                deduped_recs.append(meal)
+
+            if deduped_recs:
+                rotate_by = day_index % len(deduped_recs)
+                rotated = deduped_recs[rotate_by:] + deduped_recs[:rotate_by]
+                fresh_first = []
+                repeated_later = []
+                for meal in rotated:
+                    fname = str(meal.get("food_name", "")).lower()
+                    if any(tok in fname for tok in recent_tokens):
+                        repeated_later.append(meal)
+                    else:
+                        fresh_first.append(meal)
+                diet_recommendations = fresh_first + repeated_later
+
+        # Honor report-level avoid cues as hard block for weekly plan safety
+        if report_avoid:
+            filtered_recs = []
+            for meal in diet_recommendations:
+                fname = str(meal.get("food_name", "")).lower()
+                if any(tok.lower() in fname for tok in report_avoid):
+                    continue
+                filtered_recs.append(meal)
+            if filtered_recs:
+                diet_recommendations = filtered_recs
         
         # Create meal categories from recommendations
         breakfast_foods = []
@@ -288,6 +566,19 @@ def generate_daily_meals(target_calories: int, target_protein: float,
                 protein=float(meal.get("protein_g", 0)),
                 carbs=float(meal.get("carbs_g", 0)),
                 fats=float(meal.get("fat_g", 0)),
+                fiber=float(
+                    meal.get(
+                        "fiber_g",
+                        meal.get(
+                            "fibre_g",
+                            meal.get(
+                                "fiber (g)",
+                                meal.get("fibre (g)", meal.get("fiber", meal.get("fibre", 0)))
+                            )
+                        )
+                    )
+                    or 0
+                ),
                 preparation_time=20,
                 difficulty="medium"
             )
@@ -336,28 +627,36 @@ def generate_daily_meals(target_calories: int, target_protein: float,
                 for food in indian_supplements['breakfast'][:2-len(breakfast_foods)]:
                     breakfast_foods.append(MealItem(
                         name=food['name'], calories=food['calories'], protein=food['protein'],
-                        carbs=food['carbs'], fats=food['fat'], preparation_time=20, difficulty="medium"
+                        carbs=food['carbs'], fats=food['fat'],
+                        fiber=float(food.get('fiber', food.get('fibre', 0)) or 0),
+                        preparation_time=20, difficulty="medium"
                     ))
             
             if len(lunch_foods) < 2:
                 for food in indian_supplements['lunch'][:2-len(lunch_foods)]:
                     lunch_foods.append(MealItem(
                         name=food['name'], calories=food['calories'], protein=food['protein'],
-                        carbs=food['carbs'], fats=food['fat'], preparation_time=25, difficulty="medium"
+                        carbs=food['carbs'], fats=food['fat'],
+                        fiber=float(food.get('fiber', food.get('fibre', 0)) or 0),
+                        preparation_time=25, difficulty="medium"
                     ))
             
             if len(snack_foods) < 1:
                 for food in indian_supplements['snacks'][:1-len(snack_foods)]:
                     snack_foods.append(MealItem(
                         name=food['name'], calories=food['calories'], protein=food['protein'],
-                        carbs=food['carbs'], fats=food['fat'], preparation_time=10, difficulty="easy"
+                        carbs=food['carbs'], fats=food['fat'],
+                        fiber=float(food.get('fiber', food.get('fibre', 0)) or 0),
+                        preparation_time=10, difficulty="easy"
                     ))
             
             if len(dinner_foods) < 2:
                 for food in indian_supplements['dinner'][:2-len(dinner_foods)]:
                     dinner_foods.append(MealItem(
                         name=food['name'], calories=food['calories'], protein=food['protein'],
-                        carbs=food['carbs'], fats=food['fat'], preparation_time=30, difficulty="medium"
+                        carbs=food['carbs'], fats=food['fat'],
+                        fiber=float(food.get('fiber', food.get('fibre', 0)) or 0),
+                        preparation_time=30, difficulty="medium"
                     ))
         
         # If no recommendations available, use diverse Indian foods with variety
@@ -389,23 +688,43 @@ def generate_daily_meals(target_calories: int, target_protein: float,
             lunch_foods = filtered_foods[len(breakfast_foods):len(breakfast_foods)+len(lunch_foods)]
             snack_foods = filtered_foods[len(breakfast_foods)+len(lunch_foods):len(breakfast_foods)+len(lunch_foods)+len(snack_foods)]
             dinner_foods = filtered_foods[len(breakfast_foods)+len(lunch_foods)+len(snack_foods):]
+
+        # Hard safety filter from merged allergy/avoid list
+        if effective_allergies:
+            avoid_tokens = [a.lower() for a in effective_allergies]
+            def _safe(items: List[MealItem]) -> List[MealItem]:
+                return [m for m in items if not any(tok in m.name.lower() for tok in avoid_tokens)]
+            breakfast_foods = _safe(breakfast_foods)
+            lunch_foods = _safe(lunch_foods)
+            snack_foods = _safe(snack_foods)
+            dinner_foods = _safe(dinner_foods)
+
+        snack_foods, lunch_foods, dinner_foods = _enforce_meal_rules(
+            day_index, snack_foods, lunch_foods, dinner_foods
+        )
         
         # Ensure we have at least some items in each category
         if not breakfast_foods:
             breakfast_foods = [MealItem(name="Oatmeal", calories=150, protein=5, carbs=27, fats=3, preparation_time=15, difficulty="easy")]
         if not lunch_foods:
-            lunch_foods = [MealItem(name="Rice and Dal", calories=300, protein=8, carbs=50, fats=6, preparation_time=25, difficulty="medium")]
+            lunch_foods = [MealItem(name="Rice with Mixed Vegetable Curry", calories=320, protein=9, carbs=50, fats=8, preparation_time=25, difficulty="medium")]
         if not snack_foods:
-            snack_foods = [MealItem(name="Fruit", calories=60, protein=1, carbs=15, fats=0, preparation_time=5, difficulty="easy")]
+            snack_foods = [MealItem(name=fallback_fruit, calories=60, protein=1, carbs=15, fats=0, preparation_time=5, difficulty="easy")]
         if not dinner_foods:
             dinner_foods = [MealItem(name="Vegetable Curry", calories=250, protein=6, carbs=35, fats=10, preparation_time=30, difficulty="medium")]
         
     except Exception as e:
         # Fallback to basic meals if anything fails
+        daily_fruits = ["Apple", "Orange", "Papaya", "Guava", "Pomegranate", "Pear", "Kiwi"]
+        fallback_fruit = daily_fruits[day_index % len(daily_fruits)]
         breakfast_foods = [MealItem(name="Oatmeal", calories=150, protein=5, carbs=27, fats=3, preparation_time=15, difficulty="easy")]
-        lunch_foods = [MealItem(name="Rice and Dal", calories=300, protein=8, carbs=50, fats=6, preparation_time=25, difficulty="medium")]
-        snack_foods = [MealItem(name="Fruit", calories=60, protein=1, carbs=15, fats=0, preparation_time=5, difficulty="easy")]
+        lunch_foods = [MealItem(name="Rice with Mixed Vegetable Curry", calories=320, protein=9, carbs=50, fats=8, preparation_time=25, difficulty="medium")]
+        snack_foods = [MealItem(name=fallback_fruit, calories=60, protein=1, carbs=15, fats=0, preparation_time=5, difficulty="easy")]
         dinner_foods = [MealItem(name="Vegetable Curry", calories=250, protein=6, carbs=35, fats=10, preparation_time=30, difficulty="medium")]
+
+    snack_foods, lunch_foods, dinner_foods = _enforce_meal_rules(
+        day_index, snack_foods, lunch_foods, dinner_foods
+    )
     
     # Calculate totals
     all_meals = breakfast_foods + lunch_foods + snack_foods + dinner_foods
@@ -428,6 +747,16 @@ def generate_daily_meals(target_calories: int, target_protein: float,
         print(f"DEBUG: After adjustment - calories: {total_calories}")
     else:
         print(f"DEBUG: No adjustment needed - calories are within range")
+
+    # Re-apply strict meal rules after calorie adjustment.
+    snack_foods, lunch_foods, dinner_foods = _enforce_meal_rules(
+        day_index, snack_foods, lunch_foods, dinner_foods
+    )
+    all_meals = breakfast_foods + lunch_foods + snack_foods + dinner_foods
+    total_calories = sum(item.calories for item in all_meals)
+    total_protein = sum(item.protein for item in all_meals)
+    total_carbs = sum(item.carbs for item in all_meals)
+    total_fats = sum(item.fats for item in all_meals)
     
     return DailyMealPlan(
         day="",
@@ -443,9 +772,11 @@ def generate_daily_meals(target_calories: int, target_protein: float,
 
 def get_indian_food_supplements(day_index: int, diet_type: str) -> dict:
     """Get Indian food supplements to complement personalized recommendations"""
+    breakfast_fruits = ["Apple", "Orange", "Papaya", "Guava", "Pomegranate", "Pear", "Kiwi"]
+    selected_fruit = breakfast_fruits[day_index % len(breakfast_fruits)]
     supplements = {
         'breakfast': [
-            {'name': 'Fresh Fruit', 'calories': 60, 'protein': 1, 'carbs': 15, 'fat': 0},
+            {'name': selected_fruit, 'calories': 60, 'protein': 1, 'carbs': 15, 'fat': 0},
             {'name': 'Sprouts', 'calories': 100, 'protein': 6, 'carbs': 12, 'fat': 2}
         ],
         'lunch': [
@@ -626,7 +957,7 @@ def get_indian_food_variety(day_index: int, diet_type: str) -> dict:
     
     return food_varieties.get(day_index % 7, food_varieties[0])
 
-def generate_weekly_plan(profile_data: Dict, latest_report: Optional[Dict] = None) -> WeeklyMealPlan:
+def generate_weekly_plan(profile_data: Dict, latest_report: Optional[Report] = None) -> WeeklyMealPlan:
     """Generate a complete weekly meal plan using personalized recommendations"""
     
     # Extract profile data
@@ -639,31 +970,50 @@ def generate_weekly_plan(profile_data: Dict, latest_report: Optional[Dict] = Non
     diet_type = profile_data.get('diet_type', 'vegetarian')
     health_diseases = profile_data.get('health_diseases', '')
     food_allergies = profile_data.get('food_allergies', '')
-    
-    # Process diseases and allergies
-    diseases_list = [d.strip() for d in health_diseases.split(",") if d.strip()] if health_diseases else []
-    allergies_list = [a.strip() for a in food_allergies.split(",") if a.strip()] if food_allergies else []
-    
-    # Get personalized recommendations from the nutrition system
+
+    # Parse context from profile + report
+    report_ctx = _parse_report_context(latest_report)
+    profile_diseases = _split_to_list(health_diseases)
+    profile_allergies = _split_to_list(food_allergies)
+    diseases_list = _dedupe_keep_order(profile_diseases + report_ctx.get("diseases", []))
+    allergies_list = _dedupe_keep_order(profile_allergies + report_ctx.get("allergies", []))
+
+    # User consumed / preferred meal items from profile fields
+    meal_prefs = {
+        "breakfast": profile_data.get("breakfast", "") or "",
+        "lunch": profile_data.get("lunch", "") or "",
+        "snacks": profile_data.get("snacks", "") or "",
+        "dinner": profile_data.get("dinner", "") or ""
+    }
+
+    # Merge report "consume" foods as preference hints to increase adoption
+    report_consume = _dedupe_keep_order([str(x) for x in report_ctx.get("consume", []) if str(x).strip()])
+    if report_consume:
+        consume_text = ", ".join(report_consume)
+        for meal_key in meal_prefs.keys():
+            meal_prefs[meal_key] = ", ".join([x for x in [meal_prefs[meal_key], consume_text] if x]).strip(", ")
+
+    # Build base recommendation context (dataset-driven)
     user_data = {
         "height_cm": height_cm,
         "weight_kg": weight_kg,
         "motive": motive,
         "diet_type": diet_type,
-        "diseases": health_diseases,
-        "allergies": food_allergies,
+        "diseases": ", ".join(diseases_list),
+        "allergies": ", ".join(allergies_list),
         "level": "beginner",
         "lifestyle_level": lifestyle_level,
-        "target_area": "",
-        "breakfast": "",
-        "lunch": "",
-        "snacks": "",
-        "dinner": "",
+        "target_area": profile_data.get("target_area", ""),
+        "breakfast": meal_prefs["breakfast"],
+        "lunch": meal_prefs["lunch"],
+        "snacks": meal_prefs["snacks"],
+        "dinner": meal_prefs["dinner"],
         "age": age or 30,
-        "gender": gender or "male"
+        "gender": gender or "male",
+        "water_consumption_l": profile_data.get("water_consumption_l", 2.5)
     }
-    
-    # Generate personalized recommendations
+
+    # Generate personalized recommendations from Indian + disease dataset logic
     recommendations = logic.generate_recommendations(user_data)
     personalized_recommendations = recommendations.get("diet", [])
     
@@ -674,25 +1024,39 @@ def generate_weekly_plan(profile_data: Dict, latest_report: Optional[Dict] = Non
     # Create meals for each day of the week
     days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     meals = {}
+    recent_foods: List[str] = []
     
     for day in days:
-        # Vary calories slightly throughout the week for variety
-        day_multiplier = 1.0 + (0.1 * (days.index(day) % 3 - 1))  # -10%, 0%, +10% variation
-        day_calories = int(daily_calories * day_multiplier)
-        day_protein = daily_protein * day_multiplier
-        
+        # Keep each day aligned to the user's daily target
+        day_calories = int(daily_calories)
+        day_protein = daily_protein
+
         # Generate daily meals with personalized recommendations
         daily_plan = generate_daily_meals(
-            day_calories, 
-            day_protein, 
+            day_calories,
+            day_protein,
             diet_type,
-            diseases_list, 
+            diseases_list,
             allergies_list,
             days.index(day),  # Pass day index for variety
-            personalized_recommendations  # Pass personalized recommendations
+            personalized_recommendations,  # Pass personalized recommendations
+            user_context=user_data,
+            report_context=report_ctx,
+            recent_foods=recent_foods
         )
         daily_plan.day = day
         meals[day] = daily_plan
+
+        # Track recent foods to reduce repetition in subsequent days.
+        day_foods = [
+            *(m.name for m in daily_plan.breakfast),
+            *(m.name for m in daily_plan.lunch),
+            *(m.name for m in daily_plan.snacks),
+            *(m.name for m in daily_plan.dinner),
+        ]
+        recent_foods.extend([str(x).strip().lower() for x in day_foods if str(x).strip()])
+        if len(recent_foods) > 24:
+            recent_foods = recent_foods[-24:]
     
     # Calculate weekly totals
     weekly_calories = sum(plan.total_calories for plan in meals.values())
@@ -714,6 +1078,7 @@ def generate_weekly_plan(profile_data: Dict, latest_report: Optional[Dict] = Non
         weekly_carbs=weekly_carbs,
         weekly_fats=weekly_fats,
         based_on_weight=weight_kg,
+        based_on_health_report=report_ctx.get("summary_text") if report_ctx.get("summary_text") else None,
         last_updated=datetime.now().isoformat(),
         personalized_items=len(personalized_recommendations)
     )
@@ -740,7 +1105,13 @@ async def get_weekly_meal_plan(
                 "gender": "male",
                 "diet_type": "vegetarian",
                 "health_diseases": "",
-                "food_allergies": ""
+                "food_allergies": "",
+                "breakfast": "",
+                "lunch": "",
+                "snacks": "",
+                "dinner": "",
+                "target_area": "",
+                "water_consumption_l": 2.5
             }
             latest_report = None
         else:
@@ -753,21 +1124,39 @@ async def get_weekly_meal_plan(
                 "gender": profile.gender,
                 "diet_type": profile.diet_type or "vegetarian",
                 "health_diseases": profile.health_diseases or "",
-                "food_allergies": profile.food_allergies or ""
+                "food_allergies": profile.food_allergies or "",
+                "breakfast": profile.breakfast or "",
+                "lunch": profile.lunch or "",
+                "snacks": profile.snacks or "",
+                "dinner": profile.dinner or "",
+                "target_area": profile.target_area or "",
+                "water_consumption_l": profile.water_consumption_l or 2.5
             }
-            latest_report = db.query(Report).filter(Report.user_id == user.id).order_by(Report.uploaded_at.desc()).first()
+            latest_report = db.query(Report).filter(Report.user_id == user.id).order_by(Report.created_at.desc()).first()
         
-        # Check if plan needs updating
-        current_plan = weekly_plans.get("current")
-        
-        # For demo purposes, always generate fresh plan
-        should_update = force_refresh or not current_plan
-        
+        # Cache is user-scoped so one user's updates never overwrite another's plan.
+        plan_key = f"user:{user.id}"
+        cached_entry = weekly_plans.get(plan_key)
+        cached_plan = cached_entry.get("plan") if isinstance(cached_entry, dict) else cached_entry
+        cached_signature = cached_entry.get("signature") if isinstance(cached_entry, dict) else None
+
+        latest_signature = _build_plan_signature(profile_data, latest_report)
+        should_update = force_refresh or not cached_plan or (cached_signature != latest_signature)
+
+        if not should_update and profile:
+            try:
+                trigger_update, _ = should_update_plan(profile, latest_report, cached_plan)
+                should_update = trigger_update
+            except Exception:
+                should_update = False
+
         if should_update:
             # Generate new plan
-            new_plan = generate_weekly_plan(profile_data, 
-                {"uploaded_at": latest_report.uploaded_at.isoformat()} if latest_report else None)
-            weekly_plans["current"] = new_plan
+            new_plan = generate_weekly_plan(profile_data, latest_report)
+            weekly_plans[plan_key] = {
+                "plan": new_plan,
+                "signature": latest_signature
+            }
             
             return {
                 "weekly_plan": new_plan,
@@ -776,7 +1165,7 @@ async def get_weekly_meal_plan(
             }
         else:
             return {
-                "weekly_plan": current_plan,
+                "weekly_plan": cached_plan,
                 "message": "Using existing meal plan (no significant health changes detected)",
                 "is_fresh": False
             }

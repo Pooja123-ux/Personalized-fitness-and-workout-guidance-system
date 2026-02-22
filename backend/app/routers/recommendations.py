@@ -18,8 +18,8 @@ def get_recommendations(
 
     # ---------------- WATER INTAKE ----------------
     water_l = 2.0
-    if profile and profile.weight_kg:
-        water_l = round(max(1.8, profile.weight_kg * 0.033), 2)
+    if profile and profile.weight_kg is not None:
+        water_l = round(max(1.8, float(profile.weight_kg) * 0.033), 2)
 
     # ---------------- DEFAULT FALLBACK ----------------
     lifestyle_level = getattr(profile, "lifestyle_level", None) or "sedentary"
@@ -63,12 +63,15 @@ def get_recommendations(
     # Calculate daily protein target
     daily_protein = logic.daily_protein_target(weight_kg, motive, lifestyle_level, age)
 
+    raw_daily_calories = rec.get("daily_calories")
+    rounded_daily_calories = int(round(float(raw_daily_calories))) if raw_daily_calories is not None else None
+
     return Recommendation(
         workouts=rec.get("workouts", []),
         yoga=rec.get("yoga", []),
         diet=rec.get("diet", []),
         water_l=water_l,
-        daily_calories=rec.get("daily_calories"),
+        daily_calories=rounded_daily_calories,
         daily_protein_g=daily_protein,
         diet_alternatives=rec.get("diet_alternatives"),
         diet_recommendation_text=rec.get("diet_recommendation_text"),

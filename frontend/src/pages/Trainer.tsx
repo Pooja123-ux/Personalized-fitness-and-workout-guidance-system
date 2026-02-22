@@ -8,6 +8,8 @@ function Trainer() {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const [ready, setReady] = useState(false)
+  const [cameraError, setCameraError] = useState<string | null>(null)
+  const [cameraRetryToken, setCameraRetryToken] = useState(0)
   const [reps, setReps] = useState(0)
   const [stage, setStage] = useState<'up' | 'down' | 'none'>('none')
   const [feedback, setFeedback] = useState('Position yourself in view')
@@ -25,6 +27,7 @@ function Trainer() {
   const fallbackGif = (params.get('gif') || '').toString()
   const idx = parseInt((params.get('idx') || '0').toString(), 10)
   const [gifSrc, setGifSrc] = useState<string>('')
+  const [apiGifSrc, setApiGifSrc] = useState<string>('')
   const [targetTotal, setTargetTotal] = useState<number | null>(null)
   const [plan, setPlan] = useState<Array<{name:string; repetitions:string; gif_url:string}>>([])
   const [angles, setAngles] = useState<Record<string, number>>({})
@@ -42,6 +45,14 @@ function Trainer() {
   const [instructionIndex, setInstructionIndex] = useState(0)
   const instructionsContainerRef = useRef<HTMLDivElement | null>(null)
   const maxSpreadRef = useRef(0)
+
+  function toAbsoluteApiUrl(base: string, url: string): string {
+    if (!url) return ''
+    if (url.startsWith('http://') || url.startsWith('https://')) return url
+    const trimmedBase = base.endsWith('/') ? base.slice(0, -1) : base
+    const trimmedPath = url.startsWith('/') ? url : `/${url}`
+    return `${trimmedBase}${trimmedPath}`
+  }
   
   const localGifAliases: Record<string, string> = {
       '3/4 sit-up': '34-sit-up',
@@ -54,6 +65,31 @@ function Trainer() {
       'ankle circles': 'ankle-circles',
       'bear crawl': 'bear-crawl.',
       'back and forth step': 'back-and-forth-step.'
+  }
+
+  function buildCameraErrorMessage(err: unknown): string {
+    const e = err as { name?: string; message?: string }
+    const name = String(e?.name || '')
+    const host = window.location.hostname
+    const isSecure = window.location.protocol === 'https:' || host === 'localhost' || host === '127.0.0.1'
+
+    if (!isSecure) {
+      return 'Camera blocked: open the app on https:// or localhost.'
+    }
+    if (name === 'NotAllowedError' || name === 'SecurityError') {
+      return 'Camera permission denied. Allow camera access in browser site settings and retry.'
+    }
+    if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+      return 'No camera found on this device.'
+    }
+    if (name === 'NotReadableError' || name === 'TrackStartError') {
+      return 'Camera is in use by another app. Close other camera apps and retry.'
+    }
+    if (name === 'OverconstrainedError') {
+      return 'Camera constraints are unsupported. Retry camera.'
+    }
+
+    return `Unable to start camera${e?.message ? `: ${e.message}` : '.'}`
   }
 
   // ENHANCED: Session timer
@@ -77,6 +113,8 @@ function Trainer() {
         console.log('Setting instructions:', list)
         setInstructions(list)
         setExerciseMetadata(res.data)
+        const resolvedGif = String(res.data?.resolvedGifUrl || res.data?.localGifUrl || '')
+        setApiGifSrc(toAbsoluteApiUrl(base, resolvedGif))
 
         // Immediately speak first instruction to confirm voice feedback is working
         if (list.length > 0) {
@@ -394,14 +432,31 @@ function Trainer() {
         trySlug()
       }
     }
-    if (fallbackGif) {
+    if (apiGifSrc) {
+      tryLoad(apiGifSrc, () => {
+        if (fallbackGif) {
+          tryLoad(fallbackGif, () => {
+            tryAliasThenSlug()
+          })
+        } else {
+          tryAliasThenSlug()
+        }
+      })
+    } else if (fallbackGif) {
       tryLoad(fallbackGif, () => {
         tryAliasThenSlug()
       })
     } else {
       tryAliasThenSlug()
     }
-  }, [exerciseName, fallbackGif])
+  }, [exerciseName, fallbackGif, apiGifSrc])
+
+  function scrollInstructions(direction: 'up' | 'down') {
+    const container = instructionsContainerRef.current
+    if (!container) return
+    const delta = direction === 'up' ? -80 : 80
+    container.scrollBy({ top: delta, behavior: 'smooth' })
+  }
 
   function angle(a: any, b: any, c: any) {
     const ab = { x: a.x - b.x, y: a.y - b.y }
@@ -824,49 +879,115 @@ function Trainer() {
       console.log('Video ref not found')
       return
     }
-    
-    console.log('Requesting camera access...')
-    
-    navigator.mediaDevices.getUserMedia({ 
-      video: { 
-        width: 640, 
-        height: 480,
-        facingMode: 'user'
-      } 
-    })
-    .then(stream => {
-      console.log('Camera access granted')
-      v.srcObject = stream
-      v.play().then(() => {
-        console.log('Video playing, setting ready to true')
-        setReady(true)
-      }).catch(error => {
-        console.error('Error playing video:', error)
-      })
-    })
-    .catch(error => {
-      console.error('Camera access denied:', error)
-      setFeedback('⚠️ Camera access required for pose detection')
-    })
-  }, [])
 
+    let cancelled = false
+    let localStream: MediaStream | null = null
+
+    const stopStream = (stream: MediaStream | null) => {
+      if (!stream) return
+      stream.getTracks().forEach((t) => t.stop())
+    }
+
+    const startCamera = async () => {
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error('getUserMedia is not supported in this browser')
+        }
+
+        console.log('Requesting camera access...')
+        setFeedback('Requesting camera access...')
+        setReady(false)
+        setCameraError(null)
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'user',
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
+        })
+
+        if (cancelled) {
+          stopStream(stream)
+          return
+        }
+
+        localStream = stream
+        v.srcObject = stream
+        v.muted = true
+        v.playsInline = true
+        v.autoplay = true
+
+        const tryPlay = async () => {
+          try {
+            await v.play()
+            if (!cancelled) {
+              console.log('Video playing, setting ready to true')
+              setReady(true)
+              setCameraError(null)
+              setFeedback('Position yourself in view')
+            }
+          } catch (playError) {
+            console.error('Error playing video:', playError)
+            if (!cancelled) {
+              setReady(false)
+              const message = buildCameraErrorMessage(playError)
+              setCameraError(message)
+              setFeedback(message)
+            }
+          }
+        }
+
+        if (v.readyState >= 1) {
+          await tryPlay()
+        } else {
+          v.onloadedmetadata = () => {
+            void tryPlay()
+          }
+        }
+      } catch (error) {
+        console.error('Camera access denied or failed:', error)
+        if (!cancelled) {
+          setReady(false)
+          const message = buildCameraErrorMessage(error)
+          setCameraError(message)
+          setFeedback(message)
+        }
+      }
+    }
+
+    void startCamera()
+
+    return () => {
+      cancelled = true
+      setReady(false)
+      v.onloadedmetadata = null
+      const current = v.srcObject as MediaStream | null
+      if (current) {
+        stopStream(current)
+        v.srcObject = null
+      }
+      stopStream(localStream)
+    }
+  }, [exerciseName, cameraRetryToken])
   useEffect(() => {
     if (!ready || !videoRef.current) return
-    
+
     console.log('Initializing pose detection...')
-    
+
     const pose = new Pose({
       locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`,
     })
-    
-    pose.setOptions({ 
-      modelComplexity: 1, 
-      smoothLandmarks: true, 
+
+    pose.setOptions({
+      modelComplexity: 1,
+      smoothLandmarks: true,
       enableSegmentation: false,
       minDetectionConfidence: 0.5,
       minTrackingConfidence: 0.5
     })
-    
+
     pose.onResults((res: Results) => {
       try {
         console.log('Pose results received:', res.poseLandmarks ? 'Landmarks detected' : 'No landmarks')
@@ -874,7 +995,7 @@ function Trainer() {
         analyzeForm(res)
       } catch (error) {
         console.error('Error processing pose results:', error)
-        setFeedback('⚠️ Error processing pose')
+        setFeedback('Error processing pose')
       }
     })
 
@@ -885,8 +1006,7 @@ function Trainer() {
         cancelAnimationFrame(id)
         return
       }
-      
-      // Check if video is still playing
+
       if (videoRef.current.paused || videoRef.current.ended) {
         console.log('Video is paused or ended, attempting to restart')
         try {
@@ -895,20 +1015,19 @@ function Trainer() {
           console.error('Error restarting video:', error)
         }
       }
-      
+
       try {
         await pose.send({ image: videoRef.current })
       } catch (error) {
         console.error('Pose detection error:', error)
-        // Don't stop the loop, just continue
       }
-      
+
       id = requestAnimationFrame(frame)
     }
-    
+
     console.log('Starting pose detection frame loop')
     frame()
-    
+
     return () => {
       console.log('Cleaning up pose detection')
       cancelAnimationFrame(id)
@@ -1020,6 +1139,38 @@ function Trainer() {
           z-index: 10;
           max-width: 85%;
           text-align: center;
+        }
+        .camera-error-overlay {
+          position: absolute;
+          inset: 0;
+          background: rgba(2, 6, 23, 0.84);
+          z-index: 30;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 12px;
+          padding: 20px;
+          text-align: center;
+        }
+        .camera-error-text {
+          color: #fca5a5;
+          font-weight: 700;
+          max-width: 420px;
+          line-height: 1.4;
+          margin: 0;
+        }
+        .camera-retry-btn {
+          background: #10b981;
+          color: #052e16;
+          border: none;
+          border-radius: 10px;
+          padding: 10px 14px;
+          font-weight: 800;
+          cursor: pointer;
+        }
+        .camera-retry-btn:hover {
+          background: #34d399;
         }
 
         .status-badge {
@@ -1266,6 +1417,25 @@ function Trainer() {
           max-height: 160px;
           overflow-y: auto;
         }
+        .instructions-scroll-controls {
+          margin-top: 10px;
+          display: flex;
+          justify-content: center;
+          gap: 10px;
+        }
+        .scroll-btn {
+          border: 1px solid rgba(16, 185, 129, 0.45);
+          background: rgba(16, 185, 129, 0.15);
+          color: #d1fae5;
+          border-radius: 8px;
+          font-weight: 700;
+          font-size: 0.8rem;
+          padding: 6px 10px;
+          cursor: pointer;
+        }
+        .scroll-btn:hover {
+          background: rgba(16, 185, 129, 0.25);
+        }
         .instruction-slide {
           display: flex;
           align-items: center;
@@ -1402,6 +1572,18 @@ function Trainer() {
           </div>
 
           <div className="feedback-pill">{feedback}</div>
+          {!ready && cameraError && (
+            <div className="camera-error-overlay">
+              <p className="camera-error-text">{cameraError}</p>
+              <button
+                type="button"
+                className="camera-retry-btn"
+                onClick={() => setCameraRetryToken((t) => t + 1)}
+              >
+                Retry Camera
+              </button>
+            </div>
+          )}
 
           {instructions.length > 0 && (
             <div className="instructions-panel-bottom">
@@ -1416,6 +1598,10 @@ function Trainer() {
                     <span className="instruction-content">{instruction}</span>
                   </div>
                 ))}
+              </div>
+              <div className="instructions-scroll-controls">
+                <button className="scroll-btn" type="button" onClick={() => scrollInstructions('up')}>Scroll Up</button>
+                <button className="scroll-btn" type="button" onClick={() => scrollInstructions('down')}>Scroll Down</button>
               </div>
             </div>
           )}
