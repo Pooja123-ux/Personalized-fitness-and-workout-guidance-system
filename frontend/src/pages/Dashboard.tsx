@@ -343,13 +343,13 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    refreshAdherence();
+    refreshAdherence(true);
 
     const interval = window.setInterval(() => {
       void refreshAdherence(true);
     }, 60000);
     const onFocus = () => {
-      void refreshAdherence();
+      void refreshAdherence(true);
       void refreshMacroData();
     };
     const onVisibilityChange = () => {
@@ -620,9 +620,10 @@ export default function Dashboard() {
 
   const workout7 = recentDates.map((dateKey: string) => {
     const hit = adherence7.find((d: any) => String(d.date) === dateKey);
+    const isToday = dateKey === todayIso;
     return {
       date: dateKey,
-      completed: Boolean(hit?.workout_completed || false)
+      completed: Boolean(isToday ? (workoutCompletedToday || hit?.workout_completed) : hit?.workout_completed || false)
     };
   });
   const workoutStreakDays = Number(adherenceSummary?.active_workout_streak_days ?? adherenceSummary?.workout_streak_days ?? 0);

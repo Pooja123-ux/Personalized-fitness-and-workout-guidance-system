@@ -135,6 +135,12 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
   const mealTypes: Array<'breakfast' | 'lunch' | 'snacks' | 'dinner'> = ['breakfast', 'lunch', 'snacks', 'dinner'];
 
   const getDateForDay = (day: string): string => {
+    const toLocalIsoDate = (d: Date): string => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${dd}`;
+    };
     const dayIndexMap: Record<string, number> = {
       Monday: 0,
       Tuesday: 1,
@@ -156,7 +162,7 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
     if (target > today) {
       target.setDate(target.getDate() - 7);
     }
-    return target.toISOString().split('T')[0];
+    return toLocalIsoDate(target);
   };
 
   const buildMealItemId = (mealType: string, idx: number, name: string): string =>

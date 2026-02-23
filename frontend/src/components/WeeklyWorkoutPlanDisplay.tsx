@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+﻿import { useState, useEffect } from 'react'
+import api from '../api'
 
 interface WeeklyWorkoutPlan {
   day: string
@@ -27,11 +28,33 @@ function WeeklyWorkoutPlanDisplay() {
   const [loading, setLoading] = useState(true)
   const [selectedDay, setSelectedDay] = useState<string>('Monday')
   const [error, setError] = useState<string | null>(null)
+  const [workoutCompletedToday, setWorkoutCompletedToday] = useState(false)
+  const [workoutSaving, setWorkoutSaving] = useState(false)
+
+  const toLocalIsoDate = (d: Date): string => {
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+  }
+  const todayIso = toLocalIsoDate(new Date())
+  const todayDayName = new Date(`${todayIso}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long' })
 
   useEffect(() => {
     fetchExercisesData()
   }, [])
 
+  useEffect(() => {
+    const fetchTodayWorkoutAdherence = async () => {
+      try {
+        const res = await api.get(`/adherence/workout/day/${todayIso}`)
+        setWorkoutCompletedToday(Boolean(res?.data?.workout_completed || false))
+      } catch {
+        setWorkoutCompletedToday(false)
+      }
+    }
+    fetchTodayWorkoutAdherence()
+  }, [todayIso])
   const fetchExercisesData = async () => {
     try {
       setLoading(true)
@@ -161,8 +184,27 @@ function WeeklyWorkoutPlanDisplay() {
     return map[targetArea] || map['Full Body']
   }
 
-  const selectedDayPlan = weeklyPlan.find((plan) => plan.day === selectedDay)
-
+  
+  const markTodayWorkout = async () => {
+    if (selectedDay !== todayDayName) return
+    if (!selectedDayPlan) return
+    const nextCompleted = !workoutCompletedToday
+    const calories = Number(selectedDayPlan.calories_burned || 0)
+    try {
+      setWorkoutSaving(true)
+      await api.post('/adherence/workout/day', {
+        date: todayIso,
+        completed: nextCompleted,
+        calories_burned: nextCompleted ? calories : 0
+      })
+      setWorkoutCompletedToday(nextCompleted)
+      window.dispatchEvent(new Event('adherence-updated'))
+    } catch (err) {
+      console.error('Failed to update workout adherence from weekly plan:', err)
+    } finally {
+      setWorkoutSaving(false)
+    }
+  }
   if (loading) return <div style={{ padding: '28px', textAlign: 'center', color: '#64748b' }}>Loading workout recommendations...</div>
 
   if (error) {
@@ -261,7 +303,7 @@ function WeeklyWorkoutPlanDisplay() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <div>
                 <div style={{ fontSize: '0.76rem', color: '#64748b', fontWeight: 700, letterSpacing: '0.04em' }}>SELECTED SESSION</div>
-                <h3 style={{ margin: '4px 0 0', fontSize: '1.15rem' }}>{selectedDayPlan.day} � {selectedDayPlan.target_area}</h3>
+                <h3 style={{ margin: '4px 0 0', fontSize: '1.15rem' }}>{selectedDayPlan.day} • {selectedDayPlan.target_area}</h3>
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <div style={{ borderRadius: 10, background: '#ecfeff', color: '#155e75', padding: '6px 10px', fontWeight: 700, fontSize: '0.8rem' }}>
@@ -273,6 +315,29 @@ function WeeklyWorkoutPlanDisplay() {
                 <div style={{ borderRadius: 10, background: '#eef2ff', color: '#3730a3', padding: '6px 10px', fontWeight: 700, fontSize: '0.8rem' }}>
                   {selectedDayPlan.calories_burned} kcal
                 </div>
+                <button
+                  type="button"
+                  disabled={selectedDay !== todayDayName || workoutSaving}
+                  onClick={markTodayWorkout}
+                  style={{
+                    border: 'none',
+                    borderRadius: 10,
+                    background: selectedDay === todayDayName ? (workoutCompletedToday ? '#1d4ed8' : '#0f766e') : '#cbd5e1',
+                    color: '#fff',
+                    padding: '6px 10px',
+                    fontWeight: 700,
+                    fontSize: '0.8rem',
+                    cursor: selectedDay === todayDayName && !workoutSaving ? 'pointer' : 'not-allowed',
+                    opacity: workoutSaving ? 0.75 : 1
+                  }}
+                  title={selectedDay === todayDayName ? '' : `You can mark only ${todayDayName}`}
+                >
+                  {workoutSaving
+                    ? 'Saving...'
+                    : selectedDay === todayDayName
+                      ? (workoutCompletedToday ? 'Mark Today Not Finished' : 'Mark Today Finished')
+                      : `Only ${todayDayName}`}
+                </button>
               </div>
             </div>
           </div>
@@ -361,3 +426,5 @@ function WeeklyWorkoutPlanDisplay() {
 }
 
 export default WeeklyWorkoutPlanDisplay
+
+

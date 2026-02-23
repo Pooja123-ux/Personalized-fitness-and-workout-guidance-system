@@ -280,6 +280,11 @@ class FitnessChatbot:
             if matched.empty:
                 continue
 
+            if dataset_name == "exercises" and self._is_exercise_instruction_query(question, intent):
+                instruction_answer = self._format_exercise_instructions_answer(matched, question)
+                if instruction_answer:
+                    return instruction_answer
+
             answer = self._format_answer(dataset_name, matched, operation, target_col)
             return answer
 
@@ -299,6 +304,9 @@ class FitnessChatbot:
     def _rule_based_general_answer(self, question: str, intent: Dict[str, Any]) -> Optional[str]:
         q = (question or "").lower()
         domain = intent.get("domain", "general")
+
+        if any(k in q for k in ["what can i ask", "how can i ask", "question examples", "supported questions", "help"]):
+            return self._dataset_question_guide()
 
         bmi_answer = self._rule_based_bmi_answer(q)
         if bmi_answer:
@@ -346,6 +354,13 @@ class FitnessChatbot:
                 "and gain muscle at ~200-300 kcal above maintenance."
             )
 
+        if any(k in q for k in ["how much water", "water intake", "water per day", "water to consume", "daily water"]):
+            return (
+                "Source: rule_based\n"
+                "Water target formula used in this project: water_l = max(1.8, weight_kg x 0.033).\n"
+                "If weight is not provided, use a default range around 2.0-2.5 L/day."
+            )
+
         if any(k in q for k in ["food", "foods", "nutrition", "healthy eating", "diet"]):
             return (
                 "Source: rule_based\n"
@@ -361,6 +376,46 @@ class FitnessChatbot:
             )
 
         return None
+
+    def _dataset_question_guide(self) -> str:
+        lines = [
+            "Source: dataset_guide",
+            "You can ask using these patterns (with real names from datasets):",
+            "",
+            "1) Exercises dataset",
+            "Examples:",
+            "- instructions to astride jumps",
+            "- how to do barbell squat",
+            "- exercises for chest with dumbbell",
+            "- highest reps/time exercises (if numeric field available)",
+            "",
+            "2) Food nutrition dataset",
+            "Examples:",
+            "- calories in idli",
+            "- protein in paneer",
+            "- foods with more than 20 protein",
+            "- highest fiber foods",
+            "",
+            "3) Diet recommendations dataset",
+            "Examples:",
+            "- diet recommendation for 30 year male weight 75kg height 175cm",
+            "- plan for vegetarian with diabetes",
+            "",
+            "4) Disease-food nutrition dataset",
+            "Examples:",
+            "- foods recommended for diabetes",
+            "- foods to avoid for hypertension",
+            "- high protein foods for cholesterol",
+            "",
+            "5) Yoga poses dataset",
+            "Examples:",
+            "- benefits of vajrasana",
+            "- contraindications of headstand",
+            "- beginner yoga poses for flexibility",
+            "",
+            "Tips for best results: include exact food/exercise/pose name, include units (kg, cm, g, ml), and ask one clear intent per message.",
+        ]
+        return "\n".join(lines)
 
     def _rule_based_bmi_answer(self, q: str) -> Optional[str]:
         if "bmi" not in q:
@@ -452,6 +507,66 @@ class FitnessChatbot:
             lines.append("")
         return "\n".join(lines).strip()
 
+    def _is_exercise_instruction_query(self, question: str, intent: Dict[str, Any]) -> bool:
+        q = (question or "").lower()
+        asks_instruction = any(
+            k in q for k in ["instruction", "instructions", "how to", "steps", "form", "technique", "how do i do"]
+        )
+        if not asks_instruction:
+            return False
+        domain = intent.get("domain", "general")
+        if domain == "exercise":
+            return True
+        return any(k in q for k in ["exercise", "workout", "jump", "squat", "lunge", "press", "curl", "plank"])
+
+    def _format_exercise_instructions_answer(self, matched: pd.DataFrame, question: str) -> Optional[str]:
+        if matched.empty:
+            return None
+
+        view = matched.drop(columns=["_match_score"], errors="ignore")
+        q = (question or "").lower()
+
+        # Prefer exact/near-exact name matches from the user's question, fallback to top scored row.
+        row = None
+        if "name" in view.columns:
+            exact = view[view["name"].astype(str).str.lower().apply(lambda n: n in q or q in n)]
+            if not exact.empty:
+                row = exact.iloc[0]
+        if row is None:
+            row = view.iloc[0]
+
+        instr_cols = [c for c in view.columns if str(c).lower().startswith("instructions/")]
+        def _instr_order(col: str) -> int:
+            m = re.search(r"/(\d+)$", str(col))
+            return int(m.group(1)) if m else 9999
+        instr_cols = sorted(instr_cols, key=_instr_order)
+
+        steps: List[str] = []
+        for c in instr_cols:
+            v = row.get(c)
+            if pd.notna(v) and str(v).strip():
+                steps.append(str(v).strip())
+
+        if not steps:
+            return None
+
+        lines = [
+            "Source: exercises",
+            f"Exercise: {row.get('name', 'Unknown')}",
+            f"Target: {row.get('target', 'N/A')}",
+            f"Equipment: {row.get('equipment', 'N/A')}",
+            "",
+            "Instructions:",
+        ]
+        for i, step in enumerate(steps, start=1):
+            lines.append(f"{i}. {step}")
+
+        gif = row.get("gifUrl")
+        if pd.notna(gif) and str(gif).strip():
+            lines.extend(["", f"Demo GIF: {gif}"])
+
+        return "\n".join(lines)
+
     def _format_single_row(self, dataset_name: str, row: pd.Series, title: str) -> str:
         lines = [f"Source: {dataset_name}", title, ""]
         for c, v in row.items():
@@ -473,7 +588,11 @@ class FitnessChatbot:
 
     def _should_prefer_rule_based(self, question: str, intent: Dict[str, Any]) -> bool:
         q = (question or "").lower()
+        if self._is_exercise_instruction_query(question, intent):
+            return False
         if "bmi" in q:
+            return True
+        if any(k in q for k in ["how much water", "water intake", "water per day", "water to consume", "daily water"]):
             return True
 
         guidance_phrases = [
