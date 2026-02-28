@@ -117,6 +117,17 @@ function Trainer() {
         const res = await axios.get(`${base}/exercises/instructions`, { params: { name: exerciseName } })
         console.log('Instructions API response:', res.data)
         
+        // Check if there's an error in the response
+        if (res.data.error) {
+          console.error('Exercise not found:', res.data.error)
+          setInstructions([res.data.error])
+          setExerciseMetadata(null)
+          setPoseHints(null)
+          setFeedback(res.data.error)
+          speak(res.data.error, 'high')
+          return
+        }
+        
         const list = Array.isArray(res.data?.instructions) ? res.data.instructions : []
         console.log('Setting instructions:', list)
         setInstructions(list)
@@ -142,9 +153,11 @@ function Trainer() {
       } catch (error: any) {
         console.error('Error loading exercise data:', error)
         console.error('Error response:', error.response?.data || error.message)
-        setInstructions(['Failed to load instructions. Please try again.'])
+        const errorMsg = `Failed to load instructions for "${exerciseName}". Please check the exercise name and try again.`
+        setInstructions([errorMsg])
         setExerciseMetadata(null)
         setPoseHints(null)
+        setFeedback(errorMsg)
       }
     }
     loadExerciseData()

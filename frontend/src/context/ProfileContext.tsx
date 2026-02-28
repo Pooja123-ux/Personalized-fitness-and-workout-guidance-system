@@ -10,6 +10,16 @@ type Profile = {
   lifestyle_level: string;
   water_l?: number;
   diet_type?: string;
+  motive?: string;
+  age?: number;
+  gender?: string;
+  food_allergies?: string;
+  health_diseases?: string;
+  breakfast?: string;
+  lunch?: string;
+  snacks?: string;
+  dinner?: string;
+  daily_calories?: number;
 };
 
 type Progress = {
@@ -65,16 +75,21 @@ export const ProfileProvider: React.FC<ProfileProviderProps> = ({ children }) =>
     try {
       console.log('Fetching profile data...');
       const p = await api.get('/profile');
-      const pr = await api.get('/progress');
-      const r = await api.get('/recommendations');
-      
-      console.log('Profile response:', p.data);
-      console.log('Progress response:', pr.data);
-      console.log('Recommendations response:', r.data);
-      
       setProfile(p.data);
-      setProgress(pr.data || []);
-      setRec(r.data);
+      
+      try {
+        const pr = await api.get('/progress');
+        setProgress(pr.data || []);
+      } catch {
+        setProgress([]);
+      }
+      
+      try {
+        const r = await api.get('/recommendations');
+        setRec(r.data);
+      } catch {
+        setRec({ water_l: 2, daily_calories: 2000 });
+      }
     } catch (err: any) {
       console.error('Data fetch error:', err.response?.status, err.response?.data || err.message);
     }

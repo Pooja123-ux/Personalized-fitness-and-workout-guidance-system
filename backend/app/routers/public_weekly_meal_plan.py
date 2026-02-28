@@ -3,9 +3,12 @@ Public weekly meal plan endpoints for testing without authentication
 """
 
 from fastapi import APIRouter
+from typing import Any, Dict, Optional, cast
 from .weekly_meal_plan import (
     weekly_plans,
     health_triggers,
+    WeeklyMealPlan,
+    DailyMealPlan,
     generate_weekly_plan,
     generate_daily_meals,
     get_nutrition_summary,
@@ -14,6 +17,12 @@ from .weekly_meal_plan import (
 from datetime import date
 
 router = APIRouter()
+
+
+def _extract_weekly_plan(response: Dict[str, Any]) -> Optional[WeeklyMealPlan]:
+    """Safely extract and type-check weekly plan from route response payload."""
+    plan = response.get("weekly_plan")
+    return plan if isinstance(plan, WeeklyMealPlan) else None
 
 @router.get("/weekly-plan")
 async def get_public_weekly_meal_plan(force_refresh: bool = False):
@@ -24,7 +33,7 @@ async def get_public_weekly_meal_plan(force_refresh: bool = False):
         profile_data, latest_report = await get_demo_user_profile()
         
         # Check if plan needs updating
-        current_plan = weekly_plans.get("current")
+        current_plan = cast(Optional[WeeklyMealPlan], weekly_plans.get("current"))
         should_update = force_refresh or not current_plan
         
         if should_update:
@@ -132,17 +141,19 @@ async def get_public_daily_meal_plan(day: str):
     """Public endpoint for daily meal plan (no auth required)"""
     try:
         # Get weekly plan first
-        weekly_response = await get_public_weekly_meal_plan(False)
+        weekly_response: Dict[str, Any] = await get_public_weekly_meal_plan(False)
         if "error" in weekly_response:
             return weekly_response
-            
-        weekly_plan = weekly_response["weekly_plan"]
+
+        weekly_plan = _extract_weekly_plan(weekly_response)
+        if weekly_plan is None:
+            return {"error": "Weekly plan unavailable."}
         
         # Return specific day's meals
         if day not in weekly_plan.meals:
             return {"error": f"No meal plan found for {day}"}
         
-        daily_plan = weekly_plan.meals[day]
+        daily_plan: DailyMealPlan = weekly_plan.meals[day]
         
         return {
             "day": day,
@@ -200,11 +211,13 @@ async def get_public_nutrition_summary():
     """Public endpoint for nutrition summary (no auth required)"""
     try:
         # Get weekly plan first
-        weekly_response = await get_public_weekly_meal_plan(False)
+        weekly_response: Dict[str, Any] = await get_public_weekly_meal_plan(False)
         if "error" in weekly_response:
             return weekly_response
-            
-        weekly_plan = weekly_response["weekly_plan"]
+
+        weekly_plan = _extract_weekly_plan(weekly_response)
+        if weekly_plan is None:
+            return {"error": "Weekly plan unavailable."}
         
         # Calculate daily averages
         daily_avg_calories = weekly_plan.weekly_calories / 7
@@ -245,11 +258,13 @@ async def generate_public_shopping_list():
     """Public endpoint for shopping list (no auth required)"""
     try:
         # Get weekly plan first
-        weekly_response = await get_public_weekly_meal_plan(False)
+        weekly_response: Dict[str, Any] = await get_public_weekly_meal_plan(False)
         if "error" in weekly_response:
             return weekly_response
-            
-        weekly_plan = weekly_response["weekly_plan"]
+
+        weekly_plan = _extract_weekly_plan(weekly_response)
+        if weekly_plan is None:
+            return {"error": "Weekly plan unavailable."}
         
         # Aggregate all ingredients
         ingredient_counts = {}

@@ -1,0 +1,29 @@
+{
+  "id": "pullup-001",
+  "name": "pull-up",
+  "bodyPart": "back",
+  "equipment": "body weight",
+  "target": "lats",
+  "secondaryMuscles": [
+    "biceps",
+    "forearms",
+    "shoulders",
+    "core"
+  ],
+  "instructions": [
+    "Grab the pull-up bar with an overhand grip, hands slightly wider than shoulder-width apart.",
+    "Hang with your arms fully extended and your feet off the ground.",
+    "Engage your core and pull your shoulder blades down and back.",
+    "Pull yourself up by driving your elbows down toward your sides until your chin is above the bar.",
+    "Pause briefly at the top of the movement.",
+    "Slowly lower yourself back down to the starting position with control.",
+    "Repeat for the desired number of repetitions."
+  ],
+  "tips": [
+    "Avoid swinging or using momentum",
+    "Keep your core tight throughout the movement",
+    "Focus on pulling with your back muscles, not just your arms",
+    "Don't let your shoulders shrug up toward your ears",
+    "Breathe out as you pull up, breathe in as you lower down"
+  ]
+}

@@ -598,25 +598,14 @@ async def public_ask(request: ComprehensiveChatIn):
                 "category": "greeting",
                 "confidence": 0.9
             }
-
-        logic_answer = _project_logic_answer(question)
-        if logic_answer:
-            return {
-                "answer": logic_answer,
-                "category": "logic",
-                "question": question,
-                "confidence": 0.95,
-                "sources": [
-                    "backend/app/logic.py",
-                    "backend/app/routers/adherence.py",
-                    "frontend/src/pages/Dashboard.tsx"
-                ]
-            }
         
-        # Check for greetings
-        question_lower = question.lower()
+        # Check for greetings - only match standalone greetings
+        question_lower = question.lower().strip()
         greetings = ['hello', 'hi', 'hey', 'good morning', 'good evening', 'greetings']
-        if any(greeting in question_lower for greeting in greetings):
+        # Only treat as greeting if it's a short standalone greeting (not part of a longer question)
+        is_greeting = any(question_lower == greeting or question_lower.startswith(greeting + ' ') for greeting in greetings) and len(question.split()) <= 3
+        
+        if is_greeting:
             return {
                 "answer": "Hi there! Ready to talk about fitness and nutrition. What's on your mind?",
                 "category": "greeting",
@@ -632,92 +621,35 @@ async def public_ask(request: ComprehensiveChatIn):
                 "confidence": 0.95
             }
         
-        # Use conversational chatbot for all other questions
-        try:
-            # Create a unique user_id for public sessions
-            user_id = "public_user"
-            
-            # Get conversational response
-            conversational_response = process_conversational_message(user_id, question)
-            
-            # Extract answer and metadata
-            answer = conversational_response['answer']
-            topic = conversational_response.get('topic', 'general')
-            follow_ups = conversational_response.get('follow_up_questions', [])
-            
-            # Determine category
-            category = "general"
-            if topic == 'nutrition':
-                category = "nutrition"
-            elif topic == 'exercise':
-                category = "exercises"
-            elif topic == 'weight loss':
-                category = "diet"
-            elif topic == 'yoga':
-                category = "yoga"
-            elif topic == 'health':
-                category = "health"
-            
-            # Add follow-up suggestions to the answer if available
-            if follow_ups and len(follow_ups) > 0:
-                answer += f"\n\n💭 You can also ask:\n"
-                for i, follow_up in enumerate(follow_ups[:2], 1):
-                    answer += f"   {i}. {follow_up}\n"
-            
-            return {
-                "answer": answer,
-                "category": category,
-                "question": question,
-                "confidence": 0.9,
-                "topic": topic,
-                "follow_up_questions": follow_ups,
-                "conversational": True,
-                "sources": [
-                    "Exercises Database",
-                    "Indian Food Nutrition Dataset", 
-                    "Diet Recommendations Dataset",
-                    "Disease-Food Nutrition Dataset",
-                    "Yoga Poses Dataset"
-                ]
-            }
-            
-        except Exception as conv_error:
-            # Fallback to original logic if conversational fails
-            answer = answer_fitness_question(question)
-            
-            # Make it conversational even as fallback
-            if "Results" in answer or "cake" in answer.lower():
-                answer = f"I found some information for you:\n\n{answer}\n\nWould you like to know more about this topic?"
-            
-            question_lower = question.lower()
-            category = "general"
-            
-            if any(keyword in question_lower for keyword in ['exercise', 'workout', 'muscle', 'strength', 'training', 'fitness']):
-                category = "exercises"
-            elif any(keyword in question_lower for keyword in ['yoga', 'pose', 'asana', 'meditation']):
-                category = "yoga"
-            elif any(keyword in question_lower for keyword in ['calories', 'protein', 'nutrition', 'food', 'eat']):
-                category = "nutrition"
-            elif any(keyword in question_lower for keyword in ['diet', 'weight loss', 'weight gain']):
-                category = "diet"
-            elif any(keyword in question_lower for keyword in ['disease', 'diabetes', 'health condition']):
-                category = "health"
-            
-            return {
-                "answer": answer,
-                "category": category,
-                "question": question,
-                "confidence": 0.8,
-                "conversational": True,
-                "sources": [
-                    "Exercises Database",
-                    "Indian Food Nutrition Dataset", 
-                    "Diet Recommendations Dataset",
-                    "Disease-Food Nutrition Dataset",
-                    "Yoga Poses Dataset"
-                ]
-            }
+        # Use comprehensive chatbot for all questions
+        answer = answer_fitness_question(question)
         
+        # Determine category
+        category = "general"
+        if any(keyword in question_lower for keyword in ['exercise', 'workout', 'muscle', 'strength', 'training', 'fitness']):
+            category = "exercises"
+        elif any(keyword in question_lower for keyword in ['yoga', 'pose', 'asana', 'meditation']):
+            category = "yoga"
+        elif any(keyword in question_lower for keyword in ['calories', 'protein', 'nutrition', 'food', 'eat', 'bmi', 'water']):
+            category = "nutrition"
+        elif any(keyword in question_lower for keyword in ['diet', 'weight loss', 'weight gain']):
+            category = "diet"
+        elif any(keyword in question_lower for keyword in ['disease', 'diabetes', 'health condition']):
+            category = "health"
+        
+        return {
+            "answer": answer,
+            "category": category,
+            "question": question,
+            "confidence": 0.9,
+            "sources": [
+                "Exercises Database",
+                "Indian Food Nutrition Dataset", 
+                "Diet Recommendations Dataset",
+                "Disease-Food Nutrition Dataset",
+                "Yoga Poses Dataset"
+            ]
+        }
     except Exception as e:
         return {
             "answer": f"I'm having trouble processing that. Could you try rephrasing your question about fitness, nutrition, or exercises?",

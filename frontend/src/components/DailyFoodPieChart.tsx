@@ -71,16 +71,21 @@ const DailyFoodPieChart: React.FC<DailyFoodPieChartProps> = ({ foods, loading = 
   };
 
   if (loading) {
-    return <div style={{ padding: 20, textAlign: 'center', color: '#64748b', fontWeight: 700 }}>Loading today's foods...</div>;
+    return <div style={{ padding: 20, textAlign: 'center', color: '#94a3b8', fontWeight: 700 }}>Loading today's foods...</div>;
   }
 
   if (cleanFoods.length === 0) {
-    return <div style={{ padding: 20, textAlign: 'center', color: '#64748b', fontWeight: 700 }}>No foods available for today's plan.</div>;
+    return <div style={{ padding: 20, textAlign: 'center', color: '#94a3b8', fontWeight: 700 }}>No foods available for today's plan.</div>;
   }
 
   return (
     <div style={{ width: '100%', display: 'grid', gap: 14 }}>
-      <div style={{ position: 'relative', width: '100%', height: 260 }}>
+      <style>{`
+        .pie-chart-legend::-webkit-scrollbar {
+          display: none;
+        }
+      `}</style>
+      <div style={{ position: 'relative', width: '100%', height: 340 }}>
         <Doughnut data={chartData} options={chartOptions} />
         <div
           style={{
@@ -91,48 +96,9 @@ const DailyFoodPieChart: React.FC<DailyFoodPieChartProps> = ({ foods, loading = 
             textAlign: 'center'
           }}
         >
-          <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#0f172a' }}>{Math.round(total)}</div>
-          <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700 }}>KCAL TODAY</div>
+          <div style={{ fontSize: '2.2rem', fontWeight: 800, color: '#10b981' }}>{Math.round(total)}</div>
+          <div style={{ fontSize: '0.8rem', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>KCAL</div>
         </div>
-      </div>
-
-      <div style={{ display: 'grid', gap: 8, maxHeight: 190, overflowY: 'auto' }}>
-        {cleanFoods.map((f, idx) => {
-          const pct = total > 0 ? Math.round((Number(f.calories || 0) / total) * 100) : 0;
-          return (
-            <div
-              key={`${f.name}-${idx}`}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                background: '#f8fafc',
-                border: '1px solid #e2e8f0',
-                borderRadius: 10,
-                padding: '8px 10px'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                <span style={{ width: 10, height: 10, borderRadius: 999, background: COLORS[idx % COLORS.length], flexShrink: 0 }} />
-                <span style={{ fontSize: '0.83rem', color: '#334155', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {f.name}
-                </span>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '0.8rem', color: '#0f172a', fontWeight: 800 }}>{Math.round(f.calories)} kcal ({pct}%)</div>
-                <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 700 }}>
-                  P:{Number(f.protein || 0).toFixed(1)} C:{Number(f.carbs || 0).toFixed(1)} F:{Number(f.fats || 0).toFixed(1)}
-                  {typeof f.item_count === 'number' ? ` • ${f.item_count} item${f.item_count === 1 ? '' : 's'}` : ''}
-                </div>
-                {Array.isArray(f.foods) && f.foods.length > 0 && (
-                  <div style={{ fontSize: '0.72rem', color: '#475569', fontWeight: 600, maxWidth: 360, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    Foods: {f.foods.join(', ')}
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
       </div>
     </div>
   );

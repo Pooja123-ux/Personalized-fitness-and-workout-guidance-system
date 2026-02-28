@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useProfile } from '../context/ProfileContext';
 import api from '../api';
 
@@ -99,6 +99,8 @@ interface AdherenceExtraFood {
 
 const PersonalizedMealPlanDisplay: React.FC = () => {
   const { profile: realProfile } = useProfile();
+  const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const lastPlanFetchKeyRef = useRef<string>('');
   
   const getWaterTargetMl = (): number => {
     const liters = Number(realProfile?.water_l || 2);
@@ -107,9 +109,16 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
   
   const [mealPlan, setMealPlan] = useState<PersonalizedDailyPlan[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedDay, setSelectedDay] = useState<string>(
-    ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date().getDay()] || 'Monday'
-  );
+  const [selectedDay, setSelectedDay] = useState<string>(() => {
+    try {
+      const stored = localStorage.getItem('personalized_selected_day_v1');
+      if (stored && daysOfWeek.includes(stored)) return stored;
+    } catch {
+      // ignore storage errors
+    }
+    const day = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date().getDay()] || 'Monday';
+    return day === 'Sunday' ? 'Sunday' : day;
+  });
   const [error, setError] = useState<string | null>(null);
   const [reportInsights, setReportInsights] = useState<ReportInsights>({
     conditions: [],
@@ -131,8 +140,54 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
   const [waterMl, setWaterMl] = useState<number>(getWaterTargetMl());
   const [adherenceStatus, setAdherenceStatus] = useState<string | null>(null);
 
-  const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const mealTypes: Array<'breakfast' | 'lunch' | 'snacks' | 'dinner'> = ['breakfast', 'lunch', 'snacks', 'dinner'];
+  const normalizeCachedMeal = (meal: any, mealType: 'breakfast' | 'lunch' | 'snacks' | 'dinner'): PersonalizedMeal => ({
+    name: String(meal?.name || 'Meal'),
+    calories: Math.round(Number(meal?.calories || 0)),
+    protein: Number(meal?.protein || 0),
+    carbs: Number(meal?.carbs || 0),
+    fats: Number(meal?.fats || 0),
+    fiber: Number(meal?.fiber || meal?.fibre || 0),
+    vitamins: {},
+    minerals: {},
+    health_benefits: Array.isArray(meal?.health_benefits) ? meal.health_benefits.map(String) : [],
+    meal_type: mealType,
+    preparation_time: Number(meal?.preparation_time || 15),
+    ingredients: Array.isArray(meal?.ingredients) ? meal.ingredients.map(String) : [],
+    cooking_tips: Array.isArray(meal?.cooking_tips) ? meal.cooking_tips.map(String) : [],
+    medical_notes: Array.isArray(meal?.medical_notes) ? meal.medical_notes.map(String) : [],
+    serving_size: String(meal?.serving_size || ''),
+    quantity: String(meal?.quantity || '')
+  });
+
+  const normalizeCachedPlan = (raw: any): PersonalizedDailyPlan[] => {
+    if (!Array.isArray(raw)) return [];
+    const normalized = raw
+      .map((entry: any) => {
+        const day = String(entry?.day || '').trim();
+        if (!daysOfWeek.includes(day)) return null;
+        const meals = entry?.meals && typeof entry.meals === 'object' ? entry.meals : {};
+        const mappedMeals = {
+          breakfast: Array.isArray(meals?.breakfast) ? meals.breakfast.map((m: any) => normalizeCachedMeal(m, 'breakfast')) : [],
+          lunch: Array.isArray(meals?.lunch) ? meals.lunch.map((m: any) => normalizeCachedMeal(m, 'lunch')) : [],
+          snacks: Array.isArray(meals?.snacks) ? meals.snacks.map((m: any) => normalizeCachedMeal(m, 'snacks')) : [],
+          dinner: Array.isArray(meals?.dinner) ? meals.dinner.map((m: any) => normalizeCachedMeal(m, 'dinner')) : []
+        };
+        const allMeals = [...mappedMeals.breakfast, ...mappedMeals.lunch, ...mappedMeals.snacks, ...mappedMeals.dinner];
+        const totalCalories = Number(entry?.total_calories);
+        const totalProtein = Number(entry?.total_protein);
+        return {
+          day,
+          meals: mappedMeals,
+          total_calories: Number.isFinite(totalCalories) ? Math.round(totalCalories) : Math.round(allMeals.reduce((s, m) => s + Number(m.calories || 0), 0)),
+          total_protein: Number.isFinite(totalProtein) ? totalProtein : Math.round(allMeals.reduce((s, m) => s + Number(m.protein || 0), 0) * 10) / 10,
+          health_score: Number.isFinite(Number(entry?.health_score)) ? Number(entry.health_score) : 70,
+          personalized_notes: Array.isArray(entry?.personalized_notes) ? entry.personalized_notes.map(String) : []
+        } as PersonalizedDailyPlan;
+      })
+      .filter((x: PersonalizedDailyPlan | null): x is PersonalizedDailyPlan => x !== null);
+    return normalized;
+  };
 
   const getDateForDay = (day: string): string => {
     const toLocalIsoDate = (d: Date): string => {
@@ -164,6 +219,21 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
     }
     return toLocalIsoDate(target);
   };
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('personalized_meal_plan_v1');
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      const normalized = normalizeCachedPlan(parsed);
+      if (normalized.length > 0) {
+        setMealPlan(normalized);
+        setLoading(false);
+      }
+    } catch {
+      // ignore cache parse errors
+    }
+  }, []);
 
   const buildMealItemId = (mealType: string, idx: number, name: string): string =>
     `${mealType}:${idx}:${String(name || '').trim().toLowerCase()}`;
@@ -471,6 +541,24 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
 
   useEffect(() => {
     if (!realProfile || !insightsLoaded) return;
+    const profileKey = JSON.stringify({
+      n: String(realProfile.name || ''),
+      w: Number(realProfile.weight_kg || 0),
+      h: Number(realProfile.height_cm || 0),
+      l: String(realProfile.lifestyle_level || ''),
+      d: String(realProfile.diet_type || ''),
+      m: String(realProfile.motive || ''),
+      wl: Number(realProfile.water_l || 0)
+    });
+    const insightsKey = JSON.stringify({
+      c: reportInsights.conditions,
+      ftc: reportInsights.foodsToConsume,
+      fta: reportInsights.foodsToAvoid,
+      labs: reportInsights.labs
+    });
+    const nextKey = `${profileKey}|${insightsKey}`;
+    if (lastPlanFetchKeyRef.current === nextKey) return;
+    lastPlanFetchKeyRef.current = nextKey;
     fetchPersonalizedMealPlan();
   }, [realProfile, reportInsights, insightsLoaded]);
 
@@ -517,8 +605,9 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
   };
 
   const fetchPersonalizedMealPlan = async () => {
+    const shouldBlock = mealPlan.length === 0;
     try {
-      setLoading(true);
+      if (shouldBlock) setLoading(true);
 
       const estimateFiberFromName = (name: string): number => {
         const n = String(name || '').toLowerCase();
@@ -646,10 +735,12 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
 
       throw new Error('Weekly meal plan unavailable');
     } catch (error) {
-      setError('Failed to generate personalized meal plan');
+      if (mealPlan.length === 0) {
+        setError('Failed to generate personalized meal plan');
+      }
       console.error('Error:', error);
     } finally {
-      setLoading(false);
+      if (shouldBlock) setLoading(false);
     }
   };
 
@@ -892,40 +983,63 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
   const sugarStatusText = sugarTrend ? (sugarTrend.direction === 'up' ? 'Rising' : sugarTrend.direction === 'down' ? 'Improving' : 'Stable') : 'Tracked';
   const bpStatusClass = bpTrend?.direction === 'down' ? 'good' : 'neutral';
   const sugarStatusClass = sugarTrend?.direction === 'down' ? 'good' : 'neutral';
+  const comparisonAlertMeta = (level: 'warning' | 'good' | 'neutral') => {
+    if (level === 'warning') return { prefix: 'Alert' };
+    if (level === 'good') return { prefix: 'Improved' };
+    return { prefix: 'Stable' };
+  };
 
   return (
     <div className="personalized-reco-shell" style={{ padding: '14px', maxWidth: '1320px', margin: '0 auto', fontFamily: 'Sora, sans-serif' }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&display=swap');
         .personalized-reco-shell {
-          background: #f4f6f8;
-          border: 1px solid #e2e8f0;
+          background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+          border: 1px solid #475569;
           border-radius: 24px;
+          overflow-x: hidden;
+          width: 100%;
         }
-        .personalized-grid { display: grid; grid-template-columns: 1fr 350px; gap: 24px; width: 100%; }
+        .personalized-reco-shell::-webkit-scrollbar,
+        .personalized-reco-shell *::-webkit-scrollbar {
+          display: none;
+        }
+        .personalized-reco-shell,
+        .personalized-reco-shell * {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+        .personalized-reco-shell,
+        .personalized-reco-shell * {
+          font-family: 'Sora', sans-serif;
+          box-sizing: border-box;
+        }
+        .personalized-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 380px); gap: 20px; width: 100%; align-items: start; overflow-x: hidden; }
         .plan-day-wrap { margin-bottom: 24px; }
         .plan-day-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
         .plan-main-card,
         .plan-side-card {
-          background: #ffffff;
-          border: 1px solid #dbe3ef;
-          box-shadow: 0 16px 28px -24px rgba(15, 23, 42, 0.45);
+          background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+          border: 1px solid #475569;
+          box-shadow: 0 16px 28px -24px rgba(0, 0, 0, 0.6);
           border-radius: 20px;
+          overflow-x: hidden;
+          width: 100%;
         }
         .plan-main-card { padding: 26px; }
         .plan-side-card { padding: 22px; height: fit-content; }
         .tracker-card {
-          background: #f8fafc;
-          border: 1px solid #e2e8f0;
+          background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+          border: 1px solid #475569;
           border-radius: 14px;
           padding: 16px;
           margin-bottom: 18px;
         }
         .meal-type-card {
-          background: #f8fafc;
+          background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
           padding: 18px;
           border-radius: 15px;
-          border: 1px solid #dbe3ef;
+          border: 1px solid #475569;
         }
         .meal-type-badge {
           display: inline-flex;
@@ -935,65 +1049,146 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
           height: 26px;
           padding: 0 8px;
           border-radius: 999px;
-          background: #e2e8f0;
-          color: #0f172a;
+          background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+          color: #ffffff;
           font-size: 0.72rem;
           font-weight: 800;
           text-transform: uppercase;
         }
         .meal-item-card {
-          background: #ffffff;
+          background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
           padding: 18px;
           border-radius: 12px;
-          border: 1px solid #dbe3ef;
+          border: 1px solid #475569;
           margin-bottom: 14px;
-          box-shadow: 0 10px 18px -16px rgba(15, 23, 42, 0.55);
+          box-shadow: 0 10px 18px -16px rgba(0, 0, 0, 0.7);
         }
         .note-box {
-          background: #f8fafc;
-          border: 1px solid #e2e8f0;
+          background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+          border: 1px solid #475569;
           border-radius: 14px;
           padding: 16px;
           margin-bottom: 16px;
         }
         .note-box--recommendations {
-          background: #fffcf5;
-          border-color: #f3e8cf;
-          border-left: 4px solid #b45309;
+          background: linear-gradient(135deg, #422006 0%, #78350f 100%);
+          border-color: #b45309;
+          border-left: 4px solid #f59e0b;
         }
         .note-box--profile {
-          background: #f8fafc;
-          border-color: #dce5f0;
-          border-left: 4px solid #334155;
+          background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+          border-color: #475569;
+          border-left: 4px solid #64748b;
         }
         .note-box--medical {
-          background: #fff7f7;
-          border-color: #f5dcdc;
-          border-left: 4px solid #b91c1c;
+          background: linear-gradient(135deg, #450a0a 0%, #7f1d1d 100%);
+          border-color: #b91c1c;
+          border-left: 4px solid #ef4444;
         }
         .note-box--supplements {
-          background: #f7fafc;
-          border-color: #d5e3ee;
-          border-left: 4px solid #0f766e;
+          background: linear-gradient(135deg, #042f2e 0%, #134e4a 100%);
+          border-color: #0f766e;
+          border-left: 4px solid #14b8a6;
         }
         .note-box-title {
           font-size: 0.92rem;
           font-weight: 800;
-          color: #0f172a;
+          color: #f1f5f9;
           margin-bottom: 10px;
           letter-spacing: 0.01em;
         }
         .note-box-content {
           font-size: 0.85rem;
-          color: #334155;
+          color: #e2e8f0;
           line-height: 1.5;
         }
         .note-box-content strong {
-          color: #0f172a;
+          color: #ffffff;
           font-weight: 700;
+        }
+        .report-comparison-box {
+          margin-bottom: 16px;
+          background: linear-gradient(145deg, #1e293b 0%, #334155 60%, #3730a3 100%);
+          border: 1px solid #4f46e5;
+          border-radius: 14px;
+          padding: 14px;
+          box-shadow: 0 12px 24px -22px rgba(0, 0, 0, 0.8);
+        }
+        .comparison-note {
+          margin: 0;
+          color: #e2e8f0;
+          font-size: 0.84rem;
+          line-height: 1.45;
+          font-weight: 600;
+        }
+        .comparison-list {
+          margin-top: 10px;
+          display: grid;
+          gap: 8px;
+        }
+        .comparison-item {
+          border-radius: 10px;
+          border: 1px solid #475569;
+          background: linear-gradient(180deg, #1e293b 0%, #334155 100%);
+          padding: 8px 10px;
+          font-size: 0.8rem;
+          font-weight: 600;
+          color: #e2e8f0;
+          line-height: 1.4;
+        }
+        .comparison-item.warning {
+          border-color: #ef4444;
+          background: linear-gradient(180deg, #7f1d1d 0%, #991b1b 100%);
+          color: #fecaca;
+        }
+        .comparison-item.good {
+          border-color: #10b981;
+          background: linear-gradient(180deg, #064e3b 0%, #065f46 100%);
+          color: #a7f3d0;
+        }
+        .comparison-item.neutral {
+          border-color: #3b82f6;
+          background: linear-gradient(180deg, #1e3a8a 0%, #1e40af 100%);
+          color: #bfdbfe;
+        }
+        .comparison-line {
+          display: flex;
+          align-items: flex-start;
+          gap: 8px;
+        }
+        .comparison-pill {
+          font-size: 0.7rem;
+          font-weight: 800;
+          border-radius: 999px;
+          padding: 1px 8px;
+          white-space: nowrap;
+          margin-top: 1px;
+          border: 1px solid currentColor;
+        }
+        .profile-grid {
+          display: grid;
+          gap: 8px;
+        }
+        .profile-line {
+          margin: 0;
+          font-size: 0.84rem;
+          color: #e2e8f0;
+          line-height: 1.45;
+        }
+        .food-categories {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 12px;
         }
         @media (max-width: 1080px) {
           .personalized-grid { grid-template-columns: 1fr; gap: 16px; }
+          .plan-day-row { justify-content: flex-start; overflow-x: auto; flex-wrap: nowrap; padding-bottom: 8px; }
+        }
+        @media (max-width: 860px) {
+          .food-categories { grid-template-columns: 1fr; }
+          .personalized-reco-shell { padding: 10px; }
+          .plan-main-card { padding: 16px; }
+          .plan-side-card { padding: 16px; }
         }
       `}</style>
       {/* Day Selector */}
@@ -1022,11 +1217,11 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
         </div>
       </div>
 
-      {loading ? (
-        <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>
+      {loading && mealPlan.length === 0 ? (
+        <div style={{ padding: '40px', textAlign: 'center', color: '#cbd5e1' }}>
           <div>Loading personalized meal plan...</div>
         </div>
-      ) : error ? (
+      ) : error && mealPlan.length === 0 ? (
         <div style={{ padding: '40px', textAlign: 'center' }}>
           <div style={{ color: '#ef4444', marginBottom: '15px' }}>{error}</div>
           <button 
@@ -1040,7 +1235,7 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
         (() => {
           if (!selectedDayPlan) {
             return (
-              <div style={{ padding: '24px', border: '1px solid #dbe3ef', borderRadius: '14px', background: '#ffffff', color: '#475569' }}>
+              <div style={{ padding: '24px', border: '1px solid #475569', borderRadius: '14px', background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)', color: '#cbd5e1' }}>
                 No food recommendations available yet. Click Retry to regenerate your plan.
               </div>
             );
@@ -1048,6 +1243,11 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
           
           return (
           <>
+          {error && mealPlan.length > 0 && (
+            <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 10, border: '1px solid #fecaca', background: '#fff1f2', color: '#991b1b', fontWeight: 700, fontSize: '0.85rem' }}>
+              Plan refresh failed. Showing your last saved meal plan.
+            </div>
+          )}
           <div className="personalized-grid">
               {/* Main Meal Content */}
               <div className="plan-main-card">
@@ -1059,15 +1259,15 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
             flexWrap: 'wrap',
             gap: '15px'
           }}>
-            <h3 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 800, color: '#1e293b' }}>
+            <h3 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 800, color: '#f1f5f9' }}>
               {effectiveSelectedDay}'s Personalized Meals
             </h3>
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: '1rem', color: '#64748b', marginBottom: '5px' }}>
-                Total: <span style={{ fontWeight: 800, color: '#d97706' }}>{selectedDayPlan?.total_calories || 0}</span> cal
+              <div style={{ fontSize: '1rem', color: '#cbd5e1', marginBottom: '5px' }}>
+                Total: <span style={{ fontWeight: 800, color: '#fbbf24' }}>{selectedDayPlan?.total_calories || 0}</span> cal
               </div>
-              <div style={{ fontSize: '0.9rem', color: '#64748b' }}>
-                Protein: <span style={{ fontWeight: 600, color: '#059669' }}>{selectedDayPlan?.total_protein || 0}g</span>
+              <div style={{ fontSize: '0.9rem', color: '#cbd5e1' }}>
+                Protein: <span style={{ fontWeight: 600, color: '#10b981' }}>{selectedDayPlan?.total_protein || 0}g</span>
               </div>
             </div>
           </div>
@@ -1246,7 +1446,7 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
                   margin: '0 0 15px 0', 
                   fontSize: '1.1rem', 
                   fontWeight: 700, 
-                  color: '#475569',
+                  color: '#f1f5f9',
                   textTransform: 'capitalize',
                   display: 'flex',
                   alignItems: 'center',
@@ -1262,7 +1462,7 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
                   const planned = (selectedDayPlan?.meals?.[mealType as keyof typeof selectedDayPlan.meals] as PersonalizedMeal[]) || [];
                   if (planned.length === 0) {
                     return (
-                      <div style={{ fontSize: '0.88rem', color: '#64748b', fontWeight: 600, padding: '6px 0 2px' }}>
+                      <div style={{ fontSize: '0.88rem', color: '#cbd5e1', fontWeight: 600, padding: '6px 0 2px' }}>
                         No recommended items for this meal slot.
                       </div>
                     );
@@ -1285,28 +1485,28 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
                               persistAdherence(next, extraFoods, waterMl);
                             }}
                           />
-                          <span style={{ fontSize: '0.82rem', fontWeight: 700, color: checked ? '#059669' : '#475569' }}>
+                          <span style={{ fontSize: '0.82rem', fontWeight: 700, color: checked ? '#10b981' : '#cbd5e1' }}>
                             Mark as finished
                           </span>
                         </label>
                       );
                     })()}
-                    <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '1.1rem', marginBottom: '12px' }}>
+                    <div style={{ fontWeight: 800, color: '#f1f5f9', fontSize: '1.1rem', marginBottom: '12px' }}>
                       {meal.name}
                     </div>
                     
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                      <span style={{ fontSize: '1rem', color: '#64748b' }}>
+                      <span style={{ fontSize: '1rem', color: '#cbd5e1' }}>
                         {meal.calories} cal • {meal.protein}g protein
                       </span>
-                      <span style={{ fontSize: '0.9rem', color: '#059669', fontWeight: 600 }}>
+                      <span style={{ fontSize: '0.9rem', color: '#10b981', fontWeight: 600 }}>
                         Serving: {getServingDisplayText(meal)}
                       </span>
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', marginBottom: '12px' }}>
                       <div>
-                        <div style={{ fontSize: '0.8rem', opacity: 0.8, fontWeight: 600, marginBottom: '4px', color: '#64748b' }}>MACROS</div>
+                        <div style={{ fontSize: '0.8rem', opacity: 0.8, fontWeight: 600, marginBottom: '4px', color: '#cbd5e1' }}>MACROS</div>
                         <div style={{ display: 'flex', gap: '8px' }}>
                           <span style={{ fontSize: '0.8rem', color: '#ef4444', background: 'rgba(239,68,68,0.1)', padding: '2px 6px', borderRadius: '4px' }}>
                             P: {meal.protein}g
@@ -1320,7 +1520,7 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
                         </div>
                       </div>
                       <div>
-                        <div style={{ fontSize: '0.8rem', opacity: 0.8, fontWeight: 600, marginBottom: '4px', color: '#64748b' }}>FIBER</div>
+                        <div style={{ fontSize: '0.8rem', opacity: 0.8, fontWeight: 600, marginBottom: '4px', color: '#cbd5e1' }}>FIBER</div>
                         <span style={{ fontSize: '0.8rem', color: '#10b981', background: 'rgba(16,185,129,0.1)', padding: '2px 6px', borderRadius: '4px' }}>
                           {Number(meal.fiber || 0).toFixed(1)}g
                         </span>
@@ -1328,16 +1528,16 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
                     </div>
 
                     <div style={{ marginBottom: '12px' }}>
-                      <div style={{ fontSize: '0.8rem', opacity: 0.8, fontWeight: 600, marginBottom: '4px', color: '#64748b' }}>INGREDIENTS</div>
-                      <div style={{ fontSize: '0.85rem', color: '#475569', lineHeight: 1.4 }}>
-                        {meal.ingredients.join(', ')}
+                      <div style={{ fontSize: '0.8rem', opacity: 0.8, fontWeight: 600, marginBottom: '4px', color: '#cbd5e1' }}>INGREDIENTS</div>
+                      <div style={{ fontSize: '0.85rem', color: '#e2e8f0', lineHeight: 1.4 }}>
+                        {(Array.isArray(meal.ingredients) ? meal.ingredients : []).join(', ') || 'Not specified'}
                       </div>
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Prep: {meal.preparation_time} mins
+                      <span style={{ fontSize: '0.8rem', color: '#cbd5e1' }}>Prep: {meal.preparation_time} mins
                       </span>
-                      <span style={{ fontSize: '0.8rem', color: '#334155', fontWeight: 600 }}>Benefit: {meal.health_benefits[0]}
+                      <span style={{ fontSize: '0.8rem', color: '#e2e8f0', fontWeight: 600 }}>Benefit: {(Array.isArray(meal.health_benefits) && meal.health_benefits[0]) ? meal.health_benefits[0] : 'Balanced nutrition'}
                       </span>
                     </div>
                   </div>
@@ -1428,41 +1628,40 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
             </div>
           )}
 
-          <div className="note-box note-box--recommendations">
+          <div className="report-comparison-box">
             <div className="note-box-title">Report Comparison Summary</div>
-            <div className="note-box-content">
-              
+            <p className="comparison-note">
+              {reportComparison.duplicateGroups.length > 0
+                ? `${reportComparison.duplicateReportsCount} report uploads match an earlier report.`
+                : 'No duplicate medical report uploads were found.'}
               {reportComparison.latestIsDuplicate ? ' Latest upload appears to be already uploaded before.' : ''}
-              {reportComparison.duplicateGroups.length > 0 && (
-                <div style={{ marginTop: '8px', fontSize: '0.84rem' }}>
-                  {reportComparison.duplicateGroups.slice(0, 2).map((group, idx) => (
-                    <div key={idx} style={{ marginBottom: '4px' }}>
-                      {group.filenames.join(', ')} ({group.count} uploads)
+            </p>
+            {reportComparison.duplicateGroups.length > 0 && (
+              <div className="comparison-list">
+                {reportComparison.duplicateGroups.slice(0, 3).map((group, idx) => (
+                  <div key={idx} className="comparison-item">
+                    Matching group: {group.filenames.join(', ')} ({group.count} uploads)
+                  </div>
+                ))}
+              </div>
+            )}
+            {reportComparison.diseaseTrendAlerts.length > 0 && (
+              <div className="comparison-list">
+                {reportComparison.diseaseTrendAlerts.slice(0, 6).map((alert, idx) => {
+                  const meta = comparisonAlertMeta(alert.level);
+                  return (
+                    <div key={`${alert.condition}-${alert.lab}-${idx}`} className={`comparison-item ${alert.level}`}>
+                      <div className="comparison-line">
+                        <span className="comparison-pill">{meta.prefix}</span>
+                        <span>
+                          <strong>{alert.condition}</strong> - {alert.lab} {alert.direction === 'up' ? 'went up' : alert.direction === 'down' ? 'fell down' : 'did not change'} ({alert.previousValue} {'->'} {alert.currentValue}{alert.changePercent !== null ? `, ${alert.changePercent > 0 ? '+' : ''}${alert.changePercent}%` : ''})
+                        </span>
+                      </div>
                     </div>
-                  ))}
-                </div>
-              )}
-              {reportComparison.diseaseTrendAlerts.length > 0 && (
-                <div style={{ marginTop: '10px', display: 'grid', gap: '6px' }}>
-                  {reportComparison.diseaseTrendAlerts.slice(0, 6).map((alert, idx) => (
-                    <div
-                      key={`${alert.condition}-${alert.lab}-${idx}`}
-                      style={{
-                        border: `1px solid ${alert.level === 'warning' ? '#fecaca' : alert.level === 'good' ? '#bbf7d0' : '#cbd5e1'}`,
-                        background: alert.level === 'warning' ? '#fef2f2' : alert.level === 'good' ? '#f0fdf4' : '#f8fafc',
-                        color: alert.level === 'warning' ? '#991b1b' : alert.level === 'good' ? '#166534' : '#334155',
-                        borderRadius: '10px',
-                        padding: '8px 10px',
-                        fontSize: '0.8rem',
-                        fontWeight: 600
-                      }}
-                    >
-                      {alert.level === 'warning' ? 'ALERT:' : alert.level === 'good' ? 'Improved:' : 'Stable:'} {alert.condition} - {alert.lab} {alert.direction === 'up' ? 'went up' : alert.direction === 'down' ? 'fell down' : 'did not change'} ({alert.previousValue} {'->'} {alert.currentValue}{alert.changePercent !== null ? `, ${alert.changePercent > 0 ? '+' : ''}${alert.changePercent}%` : ''})
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Food Integration */}
@@ -1501,39 +1700,41 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
               Your Profile
             </div>
             <div className="note-box-content">
-              <div style={{ marginBottom: '8px' }}>
+              <div className="profile-grid">
+              <p className="profile-line">
                 <strong>Age:</strong> {userProfile?.age || 'Not specified'}
-              </div>
-              <div style={{ marginBottom: '8px' }}>
+              </p>
+              <p className="profile-line">
                 <strong>Weight:</strong> {userProfile?.weight_kg || 'Not specified'} kg
-              </div>
-              <div style={{ marginBottom: '8px' }}>
+              </p>
+              <p className="profile-line">
                 <strong>Height:</strong> {userProfile?.height_cm || 'Not specified'} cm
-              </div>
-              <div style={{ marginBottom: '8px' }}>
+              </p>
+              <p className="profile-line">
                 <strong>Activity Level:</strong> {userProfile?.lifestyle_level || 'Not specified'}
-              </div>
-              <div style={{ marginBottom: '8px' }}>
+              </p>
+              <p className="profile-line">
                 <strong>Health Goals:</strong> {userProfile?.health_goals?.join(', ') || 'Not specified'}
-              </div>
-              <div style={{ marginBottom: '8px' }}>
+              </p>
+              <p className="profile-line">
                 <strong>Dietary Restrictions:</strong> {userProfile?.dietary_restrictions?.join(', ') || 'None'}
-              </div>
+              </p>
               {(userProfile?.allergies?.length || 0) > 0 && (
-                <div style={{ marginBottom: '8px' }}>
+                <p className="profile-line">
                   <strong>Allergies:</strong> {userProfile?.allergies?.join(', ') || ''}
-                </div>
+                </p>
               )}
               {(userProfile?.preferred_foods?.length || 0) > 0 && (
-                <div style={{ marginBottom: '8px' }}>
+                <p className="profile-line">
                   <strong>Preferred Foods:</strong> {userProfile?.preferred_foods?.join(', ') || ''}
-                </div>
+                </p>
               )}
               {(userProfile?.foods_to_avoid?.length || 0) > 0 && (
-                <div>
+                <p className="profile-line">
                   <strong>Foods to Avoid:</strong> {userProfile?.foods_to_avoid?.join(', ') || ''}
-                </div>
+                </p>
               )}
+              </div>
             </div>
           </div>
 
@@ -1572,12 +1773,22 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
 
 // CSS-in-JS styles for elegant nutrition sidebar
 const sidebarStyles = `
+.nutrition-sidebar,
+.nutrition-sidebar *,
+.plan-side-card,
+.plan-side-card * {
+  font-family: 'Sora', sans-serif;
+  box-sizing: border-box;
+}
+
 .nutrition-sidebar {
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
   border-radius: 16px;
   padding: 20px;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+  border: 1px solid #475569;
+  overflow-x: hidden;
+  width: 100%;
 }
 
 .sidebar-header {
@@ -1606,7 +1817,7 @@ const sidebarStyles = `
   margin: 0;
   font-size: 1.1rem;
   font-weight: 700;
-  color: #1e293b;
+  color: #f1f5f9;
 }
 
 .status-badge {
@@ -1635,28 +1846,28 @@ const sidebarStyles = `
 
 .progress-grid {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 16px;
-  margin-bottom: 24px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
 }
 
 .progress-card {
-  background: white;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
   border-radius: 12px;
-  padding: 16px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-  border: 1px solid #f1f5f9;
+  padding: 10px 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  border: 1px solid #475569;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .progress-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
 }
 
 .progress-icon {
-  font-size: 1.8rem;
-  margin-bottom: 8px;
+  font-size: 1.15rem;
+  margin-bottom: 4px;
   text-align: center;
   background: transparent;
   color: inherit;
@@ -1667,34 +1878,34 @@ const sidebarStyles = `
 }
 
 .progress-label {
-  font-size: 0.8rem;
-  color: #64748b;
+  font-size: 0.7rem;
+  color: #cbd5e1;
   font-weight: 600;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
 .progress-value {
-  font-size: 1.5rem;
+  font-size: 1rem;
   font-weight: 800;
-  color: #1e293b;
-  margin-bottom: 8px;
+  color: #ffffff;
+  margin-bottom: 4px;
 }
 
 .progress-unit {
-  font-size: 0.75rem;
-  color: #64748b;
+  font-size: 0.68rem;
+  color: #cbd5e1;
   font-weight: 500;
 }
 
 .progress-bar {
   width: 100%;
-  height: 6px;
-  background: #f1f5f9;
+  height: 4px;
+  background: #334155;
   border-radius: 3px;
   overflow: hidden;
-  margin-top: 8px;
+  margin-top: 5px;
 }
 
 .progress-fill {
@@ -1734,14 +1945,14 @@ const sidebarStyles = `
   align-items: center;
   justify-content: center;
   background: transparent;
-  color: #8b5cf6;
+  color: #a78bfa;
 }
 
 .section-title {
   margin: 0;
   font-size: 1rem;
   font-weight: 700;
-  color: #1e293b;
+  color: #f1f5f9;
 }
 
 .food-input-group {
@@ -1749,21 +1960,25 @@ const sidebarStyles = `
   gap: 8px;
   margin-bottom: 16px;
   flex-wrap: wrap;
+  width: 100%;
+  overflow-x: hidden;
 }
 
 .food-input, .calories-input {
   padding: 12px 16px;
-  border: 2px solid #e2e8f0;
+  border: 2px solid #475569;
   border-radius: 8px;
   font-size: 0.9rem;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
-  background: white;
+  background: #0f172a;
+  color: #f1f5f9;
+  max-width: 100%;
 }
 
 .food-input:focus, .calories-input:focus {
   outline: none;
   border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
 }
 
 .food-input {
@@ -1809,26 +2024,29 @@ const sidebarStyles = `
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  background: white;
-  border: 1px solid #f1f5f9;
+  background: #0f172a;
+  border: 1px solid #475569;
   border-radius: 8px;
   transition: all 0.2s ease;
 }
 
 .extra-food-item:hover {
   border-color: #3b82f6;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
 }
 
 .food-name {
   font-weight: 600;
-  color: #1e293b;
+  color: #f1f5f9;
   flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .food-calories {
   font-size: 0.85rem;
-  color: #64748b;
+  color: #cbd5e1;
   font-weight: 500;
 }
 
@@ -1863,20 +2081,20 @@ const sidebarStyles = `
   gap: 8px;
   margin-bottom: 16px;
   padding: 16px;
-  background: white;
+  background: #0f172a;
   border-radius: 12px;
-  border: 1px solid #f1f5f9;
+  border: 1px solid #475569;
 }
 
 .current-water {
   font-size: 1.8rem;
   font-weight: 800;
-  color: #06b6d4;
+  color: #22d3ee;
 }
 
 .water-target {
   font-size: 1rem;
-  color: #64748b;
+  color: #cbd5e1;
   font-weight: 500;
 }
 
@@ -1889,10 +2107,10 @@ const sidebarStyles = `
 
 .water-btn {
   padding: 10px 16px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid #475569;
   border-radius: 8px;
-  background: white;
-  color: #374151;
+  background: #0f172a;
+  color: #f1f5f9;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -1901,7 +2119,7 @@ const sidebarStyles = `
 
 .water-btn:hover {
   border-color: #3b82f6;
-  color: #3b82f6;
+  background: #1e293b;
   transform: translateY(-1px);
 }
 
@@ -1920,41 +2138,45 @@ const sidebarStyles = `
 .water-input {
   width: 100%;
   padding: 12px 16px;
-  border: 2px solid #e2e8f0;
+  border: 2px solid #475569;
   border-radius: 8px;
   font-size: 1rem;
   text-align: center;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
-  background: white;
+  background: #0f172a;
+  color: #f1f5f9;
 }
 
 .water-input:focus {
   outline: none;
   border-color: #06b6d4;
-  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.1);
+  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.2);
 }
 
 // Enhanced Personalized Notes Styles
 .notes-header {
-  background: linear-gradient(135deg, #f0f9ff 0%, #e0e7ff 100%);
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
   border-radius: 16px;
   padding: 20px;
   margin-bottom: 24px;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
 }
 
 .notes-header-content {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .notes-title {
   margin: 0;
   font-size: 1.3rem;
   font-weight: 800;
-  color: #1e293b;
+  color: #ffffff;
 }
 
 .day-focus {
@@ -1965,7 +2187,7 @@ const sidebarStyles = `
 
 .day-label {
   font-size: 1rem;
-  color: #64748b;
+  color: #e2e8f0;
   font-weight: 600;
 }
 
@@ -1988,22 +2210,23 @@ const sidebarStyles = `
 }
 
 .health-card {
-  background: white;
+  background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+  backdrop-filter: blur(10px);
   border-radius: 12px;
   padding: 16px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-  border: 1px solid #f1f5f9;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  border: 1px solid #475569;
   transition: transform 0.2s ease;
 }
 
 .health-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
 }
 
 .health-title {
   font-size: 0.9rem;
-  color: #374151;
+  color: #f1f5f9;
   font-weight: 700;
   margin-bottom: 4px;
 }
@@ -2011,7 +2234,7 @@ const sidebarStyles = `
 .health-value {
   font-size: 1.1rem;
   font-weight: 800;
-  color: #1e293b;
+  color: #ffffff;
   margin-bottom: 4px;
 }
 
@@ -2037,7 +2260,7 @@ const sidebarStyles = `
 
 .health-detail {
   font-size: 0.8rem;
-  color: #64748b;
+  color: #e2e8f0;
   line-height: 1.3;
 }
 
@@ -2057,7 +2280,7 @@ const sidebarStyles = `
   align-items: flex-start;
   gap: 12px;
   padding: 12px 16px;
-  background: #f8fafc;
+  background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
   border-radius: 8px;
   border-left: 4px solid #10b981;
   margin-bottom: 8px;
@@ -2065,7 +2288,7 @@ const sidebarStyles = `
 }
 
 .recommendation-item:hover {
-  background: #f0f9ff;
+  background: linear-gradient(135deg, #334155 0%, #475569 100%);
   border-left-color: #059669;
   transform: translateX(4px);
 }
@@ -2094,8 +2317,10 @@ const sidebarStyles = `
 .recommendation-content {
   flex: 1;
   font-size: 0.9rem;
-  color: #1e293b;
+  color: #f1f5f9;
   line-height: 1.4;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .food-integration-section {
@@ -2109,16 +2334,17 @@ const sidebarStyles = `
 }
 
 .food-category {
-  background: white;
+  background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+  backdrop-filter: blur(10px);
   border-radius: 12px;
   padding: 16px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-  border: 1px solid #f1f5f9;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  border: 1px solid #475569;
 }
 
 .category-title {
   font-size: 0.9rem;
-  color: #374151;
+  color: #f1f5f9;
   font-weight: 700;
   margin-bottom: 8px;
 }
@@ -2150,6 +2376,10 @@ const sidebarStyles = `
 }
 
 @media (max-width: 768px) {
+  .progress-grid {
+    grid-template-columns: 1fr;
+  }
+
   .health-status-grid {
     grid-template-columns: 1fr;
   }
@@ -2161,6 +2391,26 @@ const sidebarStyles = `
   .recommendation-item {
     flex-direction: column;
     align-items: flex-start;
+  }
+  
+  .nutrition-sidebar {
+    padding: 14px;
+  }
+  
+  .food-input-group {
+    flex-direction: column;
+  }
+  
+  .food-input, .calories-input {
+    width: 100%;
+  }
+  
+  .water-buttons {
+    flex-direction: column;
+  }
+  
+  .water-btn {
+    width: 100%;
   }
 }
 `;

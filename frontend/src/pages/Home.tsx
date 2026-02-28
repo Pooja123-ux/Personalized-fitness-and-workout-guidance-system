@@ -7,191 +7,368 @@ function Home() {
   return (
     <div className="home-wrapper">
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
         .home-wrapper {
           min-height: 100vh;
-          /* CLEAN MESH GRADIENT BACKGROUND */
-          background-color: #f8fafc;
-          background-image: 
-            radial-gradient(at 0% 0%, rgba(16, 185, 129, 0.05) 0px, transparent 50%),
-            radial-gradient(at 100% 100%, rgba(99, 102, 241, 0.05) 0px, transparent 50%);
-          font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 60px 24px;
+          background: linear-gradient(to bottom, #0f172a, #1e293b);
+          font-family: 'Poppins', sans-serif;
           position: relative;
           overflow: hidden;
         }
 
+        .home-wrapper::before {
+          content: '';
+          position: absolute;
+          width: 500px;
+          height: 500px;
+          background: radial-gradient(circle, rgba(16, 185, 129, 0.15), transparent);
+          top: -200px;
+          right: -200px;
+          border-radius: 50%;
+        }
+
+        .home-wrapper::after {
+          content: '';
+          position: absolute;
+          width: 400px;
+          height: 400px;
+          background: radial-gradient(circle, rgba(99, 102, 241, 0.12), transparent);
+          bottom: -150px;
+          left: -150px;
+          border-radius: 50%;
+        }
+
         .container {
-          width: 100%;
-          max-width: 1100px;
+          max-width: 1400px;
+          margin: 0 auto;
+          padding: 80px 40px;
           position: relative;
           z-index: 1;
         }
 
-        .header {
+        .hero {
           text-align: center;
-          margin-bottom: 60px;
+          margin-bottom: 80px;
         }
 
-        .header h1 {
-          font-size: clamp(2.5rem, 5vw, 4rem);
+        .hero h1 {
+          font-size: clamp(2.5rem, 6vw, 4.5rem);
           font-weight: 800;
-          color: #1e293b;
-          margin: 0;
-          letter-spacing: -1.5px;
+          color: #ffffff;
+          margin-bottom: 24px;
+          letter-spacing: -2px;
           line-height: 1.1;
         }
 
-        .header p {
-          color: #64748b;
-          margin-top: 12px;
-          font-size: 1.15rem;
-          font-weight: 500;
+        .hero .highlight {
+          background: linear-gradient(135deg, #10b981, #6366f1);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
         }
 
-        /* GRID SYSTEM */
-        .grid {
-          display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 24px;
+        .hero p {
+          font-size: 1.25rem;
+          color: #94a3b8;
+          max-width: 700px;
+          margin: 0 auto 40px;
+          line-height: 1.8;
+          font-weight: 300;
         }
 
-        .card {
-          text-decoration: none;
-          background: #ffffff;
-          border-radius: 30px;
-          padding: 35px;
-          display: flex;
-          flex-direction: row;
+        .cta-primary {
+          display: inline-flex;
           align-items: center;
-          text-align: left;
-          transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-          border: 1px solid #f1f5f9;
-          box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.04);
+          gap: 12px;
+          padding: 18px 40px;
+          background: linear-gradient(135deg, #10b981, #059669);
+          color: white;
+          border: none;
+          border-radius: 12px;
+          font-size: 1.1rem;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          box-shadow: 0 10px 40px rgba(16, 185, 129, 0.3);
         }
 
-        .card:hover {
-          transform: translateY(-8px);
-          background: #ffffff;
-          border-color: #e2e8f0;
-          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.08);
+        .cta-primary:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 15px 50px rgba(16, 185, 129, 0.4);
         }
 
-        .icon {
-          min-width: 75px;
-          height: 75px;
+        .features-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+          gap: 32px;
+          margin-bottom: 60px;
+        }
+
+        .feature-card {
+          background: rgba(255, 255, 255, 0.03);
+          backdrop-filter: blur(10px);
+          border: 1px solid rgba(255, 255, 255, 0.08);
           border-radius: 20px;
+          padding: 40px;
+          text-decoration: none;
+          transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+          position: relative;
+          overflow: hidden;
+        }
+
+        .feature-card::before {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(99, 102, 241, 0.1));
+          opacity: 0;
+          transition: opacity 0.4s ease;
+        }
+
+        .feature-card:hover::before {
+          opacity: 1;
+        }
+
+        .feature-card:hover {
+          transform: translateY(-8px);
+          border-color: rgba(16, 185, 129, 0.3);
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        .feature-icon {
+          width: 70px;
+          height: 70px;
+          background: linear-gradient(135deg, #10b981, #059669);
+          border-radius: 16px;
           display: flex;
           align-items: center;
           justify-content: center;
           font-size: 32px;
-          margin-right: 25px;
-          color: white;
-          transition: transform 0.3s ease;
+          margin-bottom: 24px;
+          position: relative;
+          z-index: 1;
         }
 
-        .dashboard { background: linear-gradient(135deg, #10b981, #059669); }
-        .trainer { background: linear-gradient(135deg, #6366f1, #4f46e5); }
-        .reports { background: linear-gradient(135deg, #f59e0b, #d97706); }
-        .chat { background: linear-gradient(135deg, #ec4899, #be185d); }
-
-        .card:hover .icon {
-          transform: scale(1.1) rotate(-5deg);
+        .feature-card:nth-child(2) .feature-icon {
+          background: linear-gradient(135deg, #6366f1, #4f46e5);
         }
 
-        .card h3 {
-          font-size: 1.35rem;
+        .feature-card:nth-child(3) .feature-icon {
+          background: linear-gradient(135deg, #f59e0b, #d97706);
+        }
+
+        .feature-card:nth-child(4) .feature-icon {
+          background: linear-gradient(135deg, #ec4899, #be185d);
+        }
+
+        .feature-card:nth-child(5) .feature-icon {
+          background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+        }
+
+        .feature-card:nth-child(6) .feature-icon {
+          background: linear-gradient(135deg, #14b8a6, #0d9488);
+        }
+
+        .feature-card h3 {
+          font-size: 1.5rem;
           font-weight: 700;
-          color: #1e293b;
-          margin: 0;
+          color: #ffffff;
+          margin-bottom: 12px;
+          position: relative;
+          z-index: 1;
         }
 
-        .card p {
-          font-size: 0.95rem;
-          color: #64748b;
-          margin-top: 6px;
-          line-height: 1.5;
+        .feature-card p {
+          font-size: 1rem;
+          color: #94a3b8;
+          line-height: 1.7;
+          position: relative;
+          z-index: 1;
         }
 
-        /* CTA BUTTON */
-        .cta-wrapper {
-          margin-top: 60px;
+        .stats {
+          display: flex;
+          justify-content: center;
+          gap: 60px;
+          flex-wrap: wrap;
+          padding: 60px 0;
+          border-top: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .stat {
           text-align: center;
         }
 
-        .cta-btn {
-          padding: 20px 50px;
-          background: #1e293b;
-          color: white;
-          border: none;
-          border-radius: 20px;
+        .stat-number {
+          font-size: 3rem;
+          font-weight: 800;
+          background: linear-gradient(135deg, #10b981, #6366f1);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+          margin-bottom: 8px;
+        }
+
+        .stat-label {
+          font-size: 0.95rem;
+          color: #64748b;
+          font-weight: 500;
+        }
+
+        .benefits {
+          margin-top: 80px;
+          text-align: center;
+        }
+
+        .benefits h2 {
+          font-size: 2rem;
           font-weight: 700;
-          font-size: 1.1rem;
-          cursor: pointer;
+          color: #ffffff;
+          margin-bottom: 40px;
+        }
+
+        .benefits-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+          gap: 24px;
+        }
+
+        .benefit-item {
+          background: rgba(255, 255, 255, 0.02);
+          border: 1px solid rgba(255, 255, 255, 0.06);
+          border-radius: 16px;
+          padding: 32px 24px;
           transition: all 0.3s ease;
-          box-shadow: 0 15px 30px rgba(30, 41, 59, 0.2);
         }
 
-        .cta-btn:hover {
-          background: #10b981;
-          transform: scale(1.05);
-          box-shadow: 0 20px 40px rgba(16, 185, 129, 0.3);
+        .benefit-item:hover {
+          background: rgba(255, 255, 255, 0.04);
+          border-color: rgba(16, 185, 129, 0.3);
+          transform: translateY(-4px);
         }
 
-        @media (max-width: 800px) {
-          .grid { grid-template-columns: 1fr; }
-          .card { padding: 25px; }
+        .benefit-icon {
+          font-size: 2.5rem;
+          margin-bottom: 16px;
+        }
+
+        .benefit-item h4 {
+          font-size: 1.1rem;
+          font-weight: 600;
+          color: #ffffff;
+          margin-bottom: 8px;
+        }
+
+        .benefit-item p {
+          font-size: 0.9rem;
+          color: #94a3b8;
+          line-height: 1.6;
+        }
+
+        @media (max-width: 768px) {
+          .container { padding: 60px 24px; }
+          .hero h1 { font-size: 2.5rem; }
+          .hero p { font-size: 1.1rem; }
+          .features-grid { grid-template-columns: 1fr; gap: 20px; }
+          .feature-card { padding: 32px; }
+          .stats { gap: 40px; }
+          .stat-number { font-size: 2.5rem; }
         }
       `}</style>
 
       <div className="container">
-        <div className="header">
-          <h1>Fitness Guidance</h1>
-          <p>Smart health tracking with AI-powered insights.</p>
-        </div>
-
-        <div className="grid">
-          <Link to="/dashboard" className="card">
-            <div className="icon dashboard">📊</div>
-            <div>
-              <h3>Dashboard</h3>
-              <p>Track BMI, calories and activity progress.</p>
-            </div>
-          </Link>
-
-          <Link to="/trainer" className="card">
-            <div className="icon trainer">🏋️</div>
-            <div>
-              <h3>AI Trainer</h3>
-              <p>Improve posture with real-time smart guidance.</p>
-            </div>
-          </Link>
-
-          <Link to="/reports" className="card">
-            <div className="icon reports">📈</div>
-            <div>
-              <h3>Reports</h3>
-              <p>View detailed health analytics and trends.</p>
-            </div>
-          </Link>
-
-          <Link to="/chat" className="card">
-            <div className="icon chat">💬</div>
-            <div>
-              <h3>Health Assistant</h3>
-              <p>Get instant advice and workout plans.</p>
-            </div>
-          </Link>
-        </div>
-
-        <div className="cta-wrapper">
-          <button className="cta-btn" onClick={() => navigate('/intake')}>
-            Start Assessment →
+        <div className="hero">
+          <h1>
+            Your <span className="highlight">AI-Powered</span><br />Fitness Companion
+          </h1>
+          <p>
+            Transform your health journey with personalized workout plans, real-time coaching, 
+            and intelligent progress tracking. Achieve your fitness goals faster with data-driven insights.
+          </p>
+          <button className="cta-primary" onClick={() => navigate('/intake')}>
+            Get Started
+            <span>→</span>
           </button>
+        </div>
+
+        <div className="features-grid">
+          <Link to="/dashboard" className="feature-card">
+            <div className="feature-icon">📊</div>
+            <h3>Smart Dashboard</h3>
+            <p>Track your BMI, calories, water intake, and workout streaks with beautiful visualizations and real-time updates.</p>
+          </Link>
+
+          <Link to="/trainer" className="feature-card">
+            <div className="feature-icon">🏋️</div>
+            <h3>AI Trainer</h3>
+            <p>Get real-time posture correction and form analysis powered by computer vision technology.</p>
+          </Link>
+
+          <Link to="/reports" className="feature-card">
+            <div className="feature-icon">📈</div>
+            <h3>Health Analytics</h3>
+            <p>Upload medical reports and receive personalized health insights with detailed trend analysis.</p>
+          </Link>
+
+          <Link to="/chat" className="feature-card">
+            <div className="feature-icon">🤖</div>
+            <h3>AI Assistant</h3>
+            <p>24/7 fitness guidance, custom meal plans, and instant answers to all your health questions.</p>
+          </Link>
+
+          <Link to="/myplan" className="feature-card">
+            <div className="feature-icon">📋</div>
+            <h3>My Plan</h3>
+            <p>View your personalized workout routines, yoga sessions, and daily fitness schedule tailored to your goals.</p>
+          </Link>
+
+          <Link to="/nutrition" className="feature-card">
+            <div className="feature-icon">🥗</div>
+            <h3>Nutrition</h3>
+            <p>Calculate your daily calorie needs and get customized meal recommendations based on your profile.</p>
+          </Link>
+        </div>
+
+        <div className="stats">
+          <div className="stat">
+            <div className="stat-number">Smart</div>
+            <div className="stat-label">Workout Plans</div>
+          </div>
+          <div className="stat">
+            <div className="stat-number">Track</div>
+            <div className="stat-label">Your Progress</div>
+          </div>
+          <div className="stat">
+            <div className="stat-number">Achieve</div>
+            <div className="stat-label">Your Goals</div>
+          </div>
+        </div>
+
+        <div className="benefits">
+          <h2>Why Choose Our Platform?</h2>
+          <div className="benefits-grid">
+            <div className="benefit-item">
+              <div className="benefit-icon">🍎</div>
+              <h4>Nutrition Plans</h4>
+              <p>Custom meal plans based on your dietary preferences and health conditions</p>
+            </div>
+            <div className="benefit-item">
+              <div className="benefit-icon">📊</div>
+              <h4>Progress Reports</h4>
+              <p>Detailed analytics on weight, BMI, calories, and workout consistency</p>
+            </div>
+            <div className="benefit-item">
+              <div className="benefit-icon">🔔</div>
+              <h4>Smart Reminders</h4>
+              <p>Stay on track with water, meal, and workout notifications</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -199,4 +376,3 @@ function Home() {
 }
 
 export default Home
-

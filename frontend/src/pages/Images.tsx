@@ -72,28 +72,41 @@ function Images() {
           align-items: center;
           min-height: calc(100vh - 80px);
           font-family: 'Plus Jakarta Sans', sans-serif;
-          background:
-            radial-gradient(circle at 15% 0%, #e8f7ef 0%, transparent 35%),
-            radial-gradient(circle at 100% 100%, #ecf4ff 0%, transparent 45%),
-            #f8fafc;
+          background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+          position: relative;
+        }
+
+        .analyzer-container::before {
+          content: '';
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: radial-gradient(circle at 20% 30%, rgba(16, 185, 129, 0.08) 0%, transparent 50%),
+                      radial-gradient(circle at 80% 70%, rgba(99, 102, 241, 0.08) 0%, transparent 50%);
+          pointer-events: none;
+          z-index: 0;
         }
 
         .glass-card {
-          background: white;
+          background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
           border-radius: 40px;
           width: 100%;
           max-width: 1100px;
           display: grid;
           grid-template-columns: 440px 1fr;
           overflow: hidden;
-          box-shadow: 0 40px 100px -20px rgba(0,0,0,0.06);
-          border: 1px solid #f1f5f9;
+          box-shadow: 0 40px 100px -20px rgba(0,0,0,0.5);
+          border: 1px solid #475569;
+          position: relative;
+          z-index: 1;
         }
 
         .controls {
           padding: 4rem;
-          background: #ffffff;
-          border-right: 1px solid #f1f5f9;
+          background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+          border-right: 1px solid #475569;
         }
 
         .controls h1 {
@@ -101,7 +114,7 @@ function Images() {
           font-weight: 800;
           letter-spacing: -1.5px;
           margin: 0 0 10px 0;
-          color: #1e293b;
+          color: #f1f5f9;
         }
 
         .goal-tag {
@@ -109,13 +122,13 @@ function Images() {
           align-items: center;
           gap: 8px;
           padding: 8px 16px;
-          background: #f0fdf4;
-          color: #16a34a;
+          background: linear-gradient(135deg, #064e3b 0%, #065f46 100%);
+          color: #a7f3d0;
           border-radius: 14px;
           font-size: 0.85rem;
           font-weight: 700;
           margin-bottom: 40px;
-          border: 1px solid #dcfce7;
+          border: 1px solid #10b981;
         }
 
         .meta-strip {
@@ -126,8 +139,8 @@ function Images() {
         }
 
         .meta-card {
-          border: 1px solid #e2e8f0;
-          background: #f8fafc;
+          border: 1px solid #475569;
+          background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
           border-radius: 14px;
           padding: 10px 12px;
         }
@@ -137,7 +150,7 @@ function Images() {
           font-size: 0.7rem;
           text-transform: uppercase;
           letter-spacing: 0.4px;
-          color: #64748b;
+          color: #cbd5e1;
           font-weight: 800;
         }
 
@@ -145,14 +158,14 @@ function Images() {
           display: block;
           margin-top: 4px;
           font-size: 0.95rem;
-          color: #0f172a;
+          color: #f1f5f9;
           font-weight: 800;
         }
 
         .input-group label {
           font-size: 0.8rem;
           font-weight: 800;
-          color: #94a3b8;
+          color: #cbd5e1;
           text-transform: uppercase;
           margin-bottom: 12px;
           display: block;
@@ -162,22 +175,22 @@ function Images() {
         .input-group input {
           width: 100%;
           padding: 18px 22px;
-          border: 1px solid #e2e8f0;
+          border: 1px solid #475569;
           border-radius: 20px;
           font-size: 1rem;
           font-family: inherit;
           font-weight: 600;
-          background: #f8fafc;
+          background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
           transition: all 0.3s ease;
           box-sizing: border-box;
-          color: #1e293b;
+          color: #f1f5f9;
         }
 
         .input-group input:focus {
           outline: none;
           border-color: #6366f1;
-          background: white;
-          box-shadow: 0 10px 20px rgba(99, 102, 241, 0.05);
+          background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+          box-shadow: 0 10px 20px rgba(99, 102, 241, 0.2);
         }
 
         .dropdown {
@@ -185,13 +198,13 @@ function Images() {
           top: calc(100% + 10px);
           left: 0;
           right: 0;
-          background: white;
+          background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
           border-radius: 20px;
-          box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+          box-shadow: 0 20px 40px rgba(0,0,0,0.5);
           z-index: 100;
           max-height: 220px;
           overflow-y: auto;
-          border: 1px solid #f1f5f9;
+          border: 1px solid #475569;
           padding: 10px;
         }
 
@@ -201,19 +214,19 @@ function Images() {
           border-radius: 12px;
           font-weight: 600;
           font-size: 0.95rem;
-          color: #475569;
+          color: #cbd5e1;
           transition: 0.2s;
         }
 
         .dropdown-item:hover {
-          background: #f1f5f9;
-          color: #6366f1;
+          background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+          color: #a78bfa;
         }
 
         .action-btn {
           width: 100%;
           padding: 20px;
-          background: #1e293b;
+          background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
           color: white;
           border: none;
           border-radius: 22px;
@@ -222,18 +235,18 @@ function Images() {
           cursor: pointer;
           transition: all 0.3s;
           margin-top: 30px;
-          box-shadow: 0 10px 25px rgba(30, 41, 59, 0.2);
+          box-shadow: 0 10px 25px rgba(99, 102, 241, 0.3);
         }
 
         .action-btn:hover {
-          background: #000;
+          background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
           transform: translateY(-2px);
-          box-shadow: 0 15px 30px rgba(0,0,0,0.2);
+          box-shadow: 0 15px 30px rgba(99, 102, 241, 0.4);
         }
 
         .display {
           padding: 4rem;
-          background: #fcfcfd;
+          background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
           display: flex;
           flex-direction: column;
           align-items: center;
@@ -245,7 +258,7 @@ function Images() {
           width: 100%;
           max-width: 480px;
           margin-bottom: 16px;
-          color: #334155;
+          color: #f1f5f9;
           font-weight: 800;
           letter-spacing: -0.2px;
         }
@@ -254,27 +267,27 @@ function Images() {
           width: 280px;
           height: 280px;
           border-radius: 50%;
-          background: white;
+          background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: center;
           margin-bottom: 50px;
           position: relative;
-          box-shadow: 0 40px 80px rgba(0,0,0,0.06);
-          border: 2px solid #f1f5f9;
+          box-shadow: 0 40px 80px rgba(0,0,0,0.4);
+          border: 2px solid #475569;
         }
 
         .kcal-circle h2 {
           font-size: 5rem;
           margin: 0;
           font-weight: 900;
-          color: #1e293b;
+          color: #f1f5f9;
           letter-spacing: -2px;
         }
 
         .kcal-label {
-          color: #94a3b8;
+          color: #cbd5e1;
           font-weight: 800;
           text-transform: uppercase;
           font-size: 0.85rem;
@@ -320,12 +333,12 @@ function Images() {
 
         .empty-state {
           text-align: center;
-          color: #94a3b8;
+          color: #cbd5e1;
         }
 
         @media (max-width: 950px) {
           .glass-card { grid-template-columns: 1fr; border-radius: 30px; }
-          .controls { border-right: none; border-bottom: 1px solid #f1f5f9; padding: 2.5rem; }
+          .controls { border-right: none; border-bottom: 1px solid #475569; padding: 2.5rem; }
           .display { padding: 3rem; }
           .meta-strip { grid-template-columns: 1fr; }
         }

@@ -410,18 +410,17 @@ async def adherence_summary(
                         streak += 1
                     else:
                         break
-                else:
-                    if mode == "water":
-                        if _water_goal_met(item):
-                            streak += 1
-                        else:
-                            break
+                elif mode == "water":
+                    if _water_goal_met(item):
+                        streak += 1
                     else:
-                        workout = workout_lookup.get(cursor.isoformat()) or {"completed": False}
-                        if bool(workout.get("completed")):
-                            streak += 1
-                        else:
-                            break
+                        break
+                else:
+                    workout = workout_lookup.get(cursor.isoformat()) or {"completed": False}
+                    if bool(workout.get("completed")):
+                        streak += 1
+                    else:
+                        break
                 cursor = cursor - timedelta(days=1)
             return streak
 

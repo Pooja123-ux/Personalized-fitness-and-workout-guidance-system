@@ -12,6 +12,7 @@ FOOD_DATASET_PATH = os.path.join(BASE_DIR, "Indian_Food_Nutrition_Processed.csv"
 EXERCISE_DATASET_PATH = os.path.join(BASE_DIR, "exercises.csv")
 DISEASE_DATASET_PATH = os.path.join(BASE_DIR, "real_disease_food_nutrition_dataset.csv")
 DIET_REC_DATASET_PATH = os.path.join(BASE_DIR, "diet_recommendations_dataset.csv")
+CHATBOT_DATASET_PATH = os.path.join(BASE_DIR, "fitness_chatbot_training_dataset.csv")
 CSV_PATH = Path(__file__).resolve().parent / "Indian_Food_Nutrition_Processed.csv"
 NUTRITION_DATASET_PATH = os.path.join(BASE_DIR, "real_disease_food_nutrition_dataset.csv")
 
@@ -397,6 +398,17 @@ except Exception:
         "fiber (g)": [4.9],
         "vitamin c (mg)": [63.4],
         "calcium (mg)": [222.1]
+    })
+
+# ================= CHATBOT DATA =================
+try:
+    df_chatbot = pd.read_csv(CHATBOT_DATASET_PATH)
+    df_chatbot.columns = df_chatbot.columns.str.strip().str.lower()
+    df_chatbot.fillna("", inplace=True)  # type: ignore
+except Exception:
+    df_chatbot = pd.DataFrame({
+        "intent": ["weight_loss"],
+        "text": ["How to lose weight?"]
     })
     df_disease = pd.DataFrame({
         "disease": ["diabetes"],
@@ -931,10 +943,10 @@ def get_exercises(level: str, target_count: int = 12, target_area: Optional[str]
 
     # small synonyms map for common high-level targets -> specific muscle targets
     TARGET_SYNONYMS = {
-        "upper body": ["chest", "back", "shoulders", "biceps", "triceps"],
-        "lower body": ["quads", "hamstrings", "glutes", "calves", "quadriceps"],
-        "legs": ["quads", "hamstrings", "glutes", "calves", "quadriceps"],
-        "core": ["abs", "obliques", "lower back", "core"],
+        "upper body": ["chest", "back", "shoulders", "shoulder", "upper arms", "lower arms", "biceps", "triceps"],
+        "lower body": ["upper legs", "lower legs", "quads", "hamstrings", "glutes", "calves", "quadriceps"],
+        "legs": ["upper legs", "lower legs", "quads", "hamstrings", "glutes", "calves", "quadriceps"],
+        "core": ["waist", "abs", "obliques", "lower back", "core"],
         "full body": ["full body", "cardio", "whole body"]
     }
 

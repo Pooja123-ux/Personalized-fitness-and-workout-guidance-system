@@ -1,4 +1,4 @@
-﻿﻿import React, { useEffect, useState } from 'react';
+﻿﻿﻿﻿import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useProfile } from '../context/ProfileContext';
 import api from '../api';
@@ -552,7 +552,7 @@ export default function Dashboard() {
             size: 12,
             weight: 700
           },
-          color: '#334155',
+          color: '#e2e8f0',
           boxWidth: 10,
           boxHeight: 10,
           usePointStyle: true,
@@ -574,18 +574,18 @@ export default function Dashboard() {
       y: {
         position: 'left',
         grid: { color: 'rgba(148, 163, 184, 0.22)' },
-        ticks: { color: '#475569', font: { family: "'Sora'", size: 11, weight: 600 } },
-        title: { display: true, text: 'Weight (kg)', color: '#0369a1', font: { family: "'Sora'", size: 11, weight: 700 } }
+        ticks: { color: '#94a3b8', font: { family: "'Sora'", size: 11, weight: 600 } },
+        title: { display: true, text: 'Weight (kg)', color: '#0ea5e9', font: { family: "'Sora'", size: 11, weight: 700 } }
       },
       y1: {
         position: 'right',
         grid: { display: false },
-        ticks: { color: '#7c2d12', font: { family: "'Sora'", size: 11, weight: 600 } },
-        title: { display: true, text: 'BMI', color: '#c2410c', font: { family: "'Sora'", size: 11, weight: 700 } }
+        ticks: { color: '#fb923c', font: { family: "'Sora'", size: 11, weight: 600 } },
+        title: { display: true, text: 'BMI', color: '#f97316', font: { family: "'Sora'", size: 11, weight: 700 } }
       },
       x: {
         grid: { display: false },
-        ticks: { color: '#475569', font: { family: "'Sora'", size: 11, weight: 600 } }
+        ticks: { color: '#94a3b8', font: { family: "'Sora'", size: 11, weight: 600 } }
       }
     }
   };
@@ -743,13 +743,6 @@ export default function Dashboard() {
 
   const smartAlerts = (() => {
     const alerts: Array<{ severity: 'high' | 'medium' | 'low'; message: string }> = [];
-    const baseAlerts = Array.isArray(macroData?.alerts)
-      ? macroData.alerts.map((a: any) => ({
-        severity: (a?.severity === 'high' || a?.severity === 'medium') ? a.severity : 'low',
-        message: String(a?.message || '').trim()
-      })).filter((a: any) => a.message)
-      : [];
-    alerts.push(...baseAlerts);
     alerts.push(...reportAlerts);
 
     const lowProteinTarget = displayProteinGoal ? Math.max(1, displayProteinGoal * 0.7) : 35;
@@ -763,11 +756,6 @@ export default function Dashboard() {
     }
     if (lowProteinRun >= 3) {
       alerts.push({ severity: 'medium', message: 'Protein is low for the last 3 days. Add one high-protein meal today.' });
-    }
-
-    const yesterdayPoint = adherence7.length >= 2 ? adherence7[adherence7.length - 2] : null;
-    if (yesterdayPoint && Number(yesterdayPoint.water_progress_percent || 0) < 100) {
-      alerts.push({ severity: 'medium', message: 'Water goal was missed yesterday. Start early today to catch up.' });
     }
 
     if (progressList.length >= 2) {
@@ -788,8 +776,78 @@ export default function Dashboard() {
       if (dedup.has(key)) return false;
       dedup.add(key);
       return true;
-    }).slice(0, 6);
+    }).slice(0, 8);
   })();
+
+  const dailyReminders = (() => {
+    const reminders: Array<{ type: 'workout' | 'food' | 'water'; message: string; status: 'pending' | 'warning' }> = [];
+
+    if (!workoutCompletedToday) {
+      reminders.push({ type: 'workout', message: 'Complete your workout session today', status: 'pending' });
+    }
+
+    const completedItems = Number(todayAdherence?.completed_items_count || 0);
+    const totalItems = Number(todayAdherence?.total_items_count || 0);
+    const plannedMealsCount = todayFoods.reduce((sum, item) => sum + Number(item.item_count || 0), 0);
+    
+    // Show food reminder if there are planned meals and not all are completed
+    if (plannedMealsCount > 0 && completedItems < plannedMealsCount) {
+      reminders.push({ type: 'food', message: `Complete your meals today (${completedItems}/${plannedMealsCount} done)`, status: 'warning' });
+    } else if (totalItems > 0 && completedItems < totalItems) {
+      reminders.push({ type: 'food', message: `Complete remaining meals (${completedItems}/${totalItems} done)`, status: 'warning' });
+    }
+
+    const todayWaterPct = Number(todayAdherence?.water_progress_percent || 0);
+    const todayWaterMl = Number(todayAdherence?.water_ml || 0);
+    
+    if (todayWaterMl > 0 && todayWaterPct < 100) {
+      reminders.push({ type: 'water', message: `Drink more water (${todayWaterPct}% of target)`, status: 'warning' });
+    } else if (todayWaterMl === 0) {
+      reminders.push({ type: 'water', message: 'Start tracking your water intake today', status: 'pending' });
+    }
+
+    return reminders;
+  })();
+
+  const highlightAlertMessage = (message: string) => {
+    const keywordTerms = [
+      'Protein', 'Water', 'Workout', 'Weight', 'consistency', 'streak',
+      'goal', 'calories', 'report', 'lab', 'high', 'low', 'missed', 'plateaued'
+    ];
+    const diseaseTerms = [
+      'diabetes', 'hypertension', 'obesity', 'anemia', 'thyroid',
+      'cholesterol', 'asthma', 'pcos', 'pcod', 'heart disease',
+      'kidney disease', 'fatty liver', 'insulin resistance'
+    ];
+
+    const reportDisease = /Report flag:\s*(.+?)\s+needs/i.exec(message)?.[1]?.trim();
+    const allTerms = [...keywordTerms, ...diseaseTerms, ...(reportDisease ? [reportDisease] : [])];
+    const escapedTerms = allTerms
+      .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+      .sort((a, b) => b.length - a.length);
+    const valuePattern = '\\b\\d+(?:\\.\\d+)?(?:\\/\\d+(?:\\.\\d+)?)?\\s*(?:mg\\/dL|mmol\\/L|kcal|kg|g|ml|L|%|day|days|session|sessions)?\\b';
+    const pattern = new RegExp(`(${escapedTerms.join('|')}|${valuePattern})`, 'gi');
+    const parts = message.split(pattern);
+
+    const normalize = (v: string) => v.toLowerCase().replace(/[^a-z0-9\\s/.-]/g, '').trim();
+    const keywordSet = new Set(keywordTerms.map((v) => normalize(v)));
+    const diseaseSet = new Set([...diseaseTerms, ...(reportDisease ? [reportDisease] : [])].map((v) => normalize(v)));
+
+    return parts.map((part, index) => {
+      const norm = normalize(part);
+      const isValue = /^\\d/.test(part.trim());
+      if (isValue) {
+        return <span key={`val-${index}`} className="alert-value">{part}</span>;
+      }
+      if (diseaseSet.has(norm)) {
+        return <span key={`dis-${index}`} className="alert-disease">{part}</span>;
+      }
+      if (keywordSet.has(norm)) {
+        return <span key={`kw-${index}`} className="alert-keyword">{part}</span>;
+      }
+      return <React.Fragment key={`txt-${index}`}>{part}</React.Fragment>;
+    });
+  };
 
   const parsedQuote = (() => {
     try {
@@ -883,112 +941,44 @@ export default function Dashboard() {
 
       <div className="stats-grid">
         {[
-          { icon: 'H2O', label: 'Water Goal', val: rec?.water_l ? `${rec.water_l}L approx` : '—' },
-          { icon: 'KCAL', label: `Burned (${todayLabel})`, val: `${Math.round(currentWorkoutBurned || (workoutCompletedToday ? todayWorkoutCalories : 0))} kcal` },
-          { icon: 'MIN', label: 'Workout', val: `${workoutMinutes}m` },
-          { icon: 'KG', label: 'Weight', val: `${safeWeight}kg` },
-          { icon: 'GOAL', label: 'Calories Goal', val: displayCaloriesGoal != null ? `${displayCaloriesGoal} kcal approx` : '—' },
-          { icon: 'PRO', label: 'Protein Goal', val: displayProteinGoal != null ? `${displayProteinGoal} g approx` : '—' },
-          { icon: 'EAT', label: hasTodayFoodLog ? 'Ate Today' : 'Latest Intake', val: displayFoodPoint ? `${Math.round(displayFoodPoint.consumed_total_calories || 0)} kcal` : '—' },
-          { icon: 'FS', label: 'Food Streak', val: `${foodStreakDays} day${foodStreakDays === 1 ? '' : 's'}` },
-          { icon: 'WS', label: 'Water Streak', val: `${waterStreakDays} day${waterStreakDays === 1 ? '' : 's'}` },
-          { icon: 'WKS', label: 'Workout Streak', val: `${workoutStreakDays} day${workoutStreakDays === 1 ? '' : 's'}` },
-          { icon: 'DONE', label: `Workout ${todayLabel}`, val: workoutCompletedToday ? 'Finished' : 'Pending' }
+          { icon: '⚖️', label: 'Current Weight', val: `${safeWeight} kg`, theme: 'weight' },
+          { icon: '🎯', label: 'Calorie Target (approx)', val: displayCaloriesGoal != null ? `${displayCaloriesGoal} kcal` : '—', theme: 'goal' },
+          { icon: '🍽️', label: hasTodayFoodLog ? 'Consumed Today' : 'Last Meal', val: displayFoodPoint ? `${Math.round(displayFoodPoint.consumed_total_calories || 0)} kcal` : '—', theme: 'eat' },
+          { icon: '🥩', label: 'Protein Target (approx)', val: displayProteinGoal != null ? `${displayProteinGoal}g` : '—', theme: 'protein' },
+          { icon: '💧', label: 'Water Target (approx)', val: rec?.water_l ? `${rec.water_l}L` : '—', theme: 'water' },
+          { icon: '⏱️', label: 'Workout Duration (approx)', val: `${workoutMinutes} min`, theme: 'time' },
+          { icon: '🔥', label: `Calories Burned`, val: `${Math.round(currentWorkoutBurned || (workoutCompletedToday ? todayWorkoutCalories : 0))} kcal`, theme: 'burn' },
+          { icon: '👟', label: 'Steps Target', val: '7K-10K', theme: 'steps' },
+          { icon: '😴', label: 'Sleep Target', val: '7-8 hrs', theme: 'sleep' }
         ].map((s, i) => (
-          <div key={i} className="stat-card">
-            <span className="stat-icon">{s.icon}</span>
-            <div className="stat-info">
-              <h4>{s.label}</h4>
-              <p>{s.val}</p>
+          <div key={i} className={`stat-card ${s.theme}`}>
+            <div className="stat-content">
+              <span className="stat-icon-large" aria-hidden="true">{s.icon}</span>
+              <div className="stat-details">
+                <h4>{s.label}</h4>
+                <p>{s.val}</p>
+              </div>
             </div>
           </div>
         ))}
       </div>
 
       <div className="main-content">
-        <div className="left-stack">
-          <section className="chart-section card">
-            <div className="card-header">
-              <h3>Health Progression</h3>
-              <span className="badge">Dual Metric View</span>
-            </div>
-            <div className="chart-container">
-              {progressList.length > 0 ? (
-                <Line data={chartData} options={chartOptions} />
-              ) : (
-                <div className="empty-chart">No data points yet</div>
-              )}
-            </div>
-          </section>
-
-          <section className="update-section card">
-            <h3>Log Daily Stats</h3>
-            <form onSubmit={handleWeightSubmit}>
-              <div className="input-group">
-                <label>Weight (kg)</label>
-                <input 
-                  type="number" 
-                  step="0.1" 
-                  value={newWeight} 
-                  onChange={e => setNewWeight(e.target.value === '' ? '' : Number(e.target.value))} 
-                  required 
-                />
-              </div>
-              <div className="input-group">
-                <label>Notes</label>
-                <textarea 
-                  value={note} 
-                  onChange={e => setNote(e.target.value)} 
-                  placeholder="How's your energy?"
-                  rows={4}
-                />
-              </div>
-              <button type="submit" className="btn-primary">Sync Progress</button>
-            </form>
-          </section>
-
-          {smartAlerts.length > 0 && (
-            <section className="card alerts-card">
-              <div className="card-header">
-                <h3>Smart Alerts</h3>
-                <span className="badge">Today</span>
-              </div>
-              <div className="alerts-list">
-                {smartAlerts.map((a: any, idx: number) => (
-                  <div key={`smart-${idx}`} className={`alert-item ${a.severity || 'medium'}`}>
-                    <div className="alert-title">{String(a.severity || 'medium')} priority</div>
-                    <div className="alert-msg">{a.message}</div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-        </div>
-
-        <div className="right-stack">
+        <div className="top-row">
           <section className="macro-section card">
             <div className="card-header">
-              <h3>{selectedPieDay} Food Plan</h3>
+              <h3>🍽️ {selectedPieDay} Food Plan</h3>
               <span className="badge">
-                {todayFoods.length > 0 ? `${todayFoods.length} foods` : 'Weekly Plan'}
+                {todayFoods.length > 0 ? `${todayFoods.length} meals` : 'Weekly Plan'}
               </span>
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+            <div className="day-selector">
               {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((day) => (
                 <button
                   key={day}
                   type="button"
                   onClick={() => setSelectedPieDay(day)}
-                  style={{
-                    padding: '6px 10px',
-                    borderRadius: 999,
-                    border: selectedPieDay === day ? '1px solid #0f766e' : '1px solid #d1d5db',
-                    background: selectedPieDay === day ? '#ccfbf1' : '#fff',
-                    color: selectedPieDay === day ? '#115e59' : '#475569',
-                    fontSize: '0.75rem',
-                    fontWeight: 800,
-                    cursor: 'pointer'
-                  }}
+                  className={`day-btn ${selectedPieDay === day ? 'active' : ''}`}
                 >
                   {day.slice(0, 3)}
                 </button>
@@ -997,42 +987,114 @@ export default function Dashboard() {
             {todayFoodsError ? (
               <div className="empty-chart">{todayFoodsError}</div>
             ) : (
-              <DailyFoodPieChart foods={todayFoods} loading={todayFoodsLoading} />
+              <div className="food-plan-content">
+                <div className="food-plan-left">
+                  <div className="total-calories-badge">
+                    <div className="calories-number">{todayFoods.reduce((sum, item) => sum + Number(item.calories || 0), 0)}</div>
+                    <div className="calories-label">KCAL</div>
+                  </div>
+                  <DailyFoodPieChart foods={todayFoods} loading={todayFoodsLoading} />
+                </div>
+                <div className="meal-breakdown">
+                  {todayFoods.map((food, idx) => {
+                    const totalCal = todayFoods.reduce((sum, item) => sum + Number(item.calories || 0), 0);
+                    const percentage = totalCal > 0 ? Math.round((food.calories / totalCal) * 100) : 0;
+                    const mealIcons: Record<string, string> = {
+                      'Breakfast': '🍳',
+                      'Lunch': '🍛',
+                      'Snacks': '🍪',
+                      'Dinner': '🍲'
+                    };
+                    return (
+                      <div key={idx} className="meal-card">
+                        <div className="meal-header">
+                          <span className="meal-icon">{mealIcons[food.name] || '🍽️'}</span>
+                          <span className="meal-name">{food.name}</span>
+                          <span className="meal-percentage">{percentage}%</span>
+                        </div>
+                        <div className="meal-stats">
+                          <span className="meal-cal">{food.calories} kcal</span>
+                          <span className="meal-macro">P:{food.protein?.toFixed(1) || 0}</span>
+                          <span className="meal-macro">C:{food.carbs?.toFixed(1) || 0}</span>
+                          <span className="meal-macro">F:{food.fats?.toFixed(1) || 0}</span>
+                          <span className="meal-items">• {food.item_count || 0} items</span>
+                        </div>
+                        {food.foods && food.foods.length > 0 && (
+                          <div className="meal-foods">
+                            <span className="foods-label">Foods:</span> {food.foods.join(', ')}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             )}
           </section>
+        </div>
 
-          <section className="card trend-card">
+        <div className="chart-row">
+          <section className="chart-section card">
             <div className="card-header">
-              <h3>Weekly Trend Cards</h3>
-              <span className="badge">Last 7 Days</span>
+              <h3>Health Progression</h3>
+              <span className="badge">Dual Metric View</span>
             </div>
-            <div className="trend-grid">
-              {[
-                { label: 'Weight', values: weightTrendValues, suffix: ' kg', meta: 'from progress logs' },
-                { label: 'Calories', values: calories7, suffix: ' kcal', meta: 'consumed' },
-                { label: 'Water', values: water7, suffix: '%', meta: 'target completion' },
-                { label: 'Protein', values: protein7Safe, suffix: ' g', meta: 'planned/consumed' },
-                { label: 'Workout', values: workout7Pct, suffix: '%', meta: 'completed days' }
-              ].map((item) => {
-                const dir = trendDirection(item.values);
-                return (
-                  <article key={item.label} className="trend-item">
-                    <div className="trend-top">
-                      <div className="trend-label">{item.label}</div>
-                      <div className={`trend-dir ${dir}`}>{dir === 'up' ? '▲' : dir === 'down' ? '▼' : '•'}</div>
-                    </div>
-                    <div className="trend-value">{trendDeltaText(item.values, item.suffix)}</div>
-                    <div className="trend-meta">{item.meta}</div>
-                  </article>
-                );
-              })}
+            <div className="chart-with-stats">
+              <div className="chart-container">
+                {progressList.length > 0 ? (
+                  <Line data={chartData} options={chartOptions} />
+                ) : (
+                  <div className="empty-chart">No data points yet</div>
+                )}
+              </div>
+              <div className="log-stats-sidebar">
+                <h4 style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--ink)', marginBottom: '12px', textAlign: 'center' }}>📊 Log Daily Stats</h4>
+                <form onSubmit={handleWeightSubmit} style={{ width: '100%' }}>
+                  <div className="input-group">
+                    <label>Weight (kg)</label>
+                    <input 
+                      type="number" 
+                      step="0.1" 
+                      value={newWeight} 
+                      onChange={e => setNewWeight(e.target.value === '' ? '' : Number(e.target.value))} 
+                      required 
+                    />
+                  </div>
+                  <div className="input-group">
+                    <label>Notes</label>
+                    <textarea 
+                      value={note} 
+                      onChange={e => setNote(e.target.value)} 
+                      placeholder="How's your energy?"
+                      rows={2}
+                    />
+                  </div>
+                  <button type="submit" className="btn-primary">Sync Progress</button>
+                </form>
+              </div>
             </div>
+          </section>
+        </div>
+
+        <div className="middle-row">
+          <section className="card consistency-card">
+            <div className="card-header">
+              <h3>Consistency Score</h3>
+              <span className="badge">Combined</span>
+            </div>
+            <div className="compliance-score">{consistencyScore}%</div>
+            <div className="compliance-bar">
+              <div className="compliance-fill" style={{ width: `${Math.min(100, Math.max(0, consistencyScore))}%` }} />
+            </div>
+            <p className="compliance-text">
+              Based on your active food, water, and workout streaks.
+            </p>
           </section>
 
           <section className="card goal-progress-card">
             <div className="card-header">
-              <h3>Goal Progress Widgets</h3>
-              <span className="badge">Target vs Current</span>
+              <h3>Goal Progress</h3>
+              <span className="badge">Active</span>
             </div>
             <div className="goal-grid">
               {goalWidgets.map((goal) => (
@@ -1049,77 +1111,85 @@ export default function Dashboard() {
             </div>
           </section>
 
-          <section className="card workout-streak-card">
+          <section className="card trend-card">
             <div className="card-header">
-              <h3>Workout Streak</h3>
-              <span className="badge">Today: {todayLabel}</span>
+              <h3>Weekly Trends</h3>
+              <span className="badge">7 Days</span>
             </div>
-            <div className="workout-actions">
-              <button
-                type="button"
-                className={`btn-primary workout-btn ${workoutCompletedToday ? 'is-done' : ''}`}
-                onClick={toggleTodayWorkoutFinished}
-              >
-                {workoutCompletedToday ? `Mark ${todayLabel} as Not Finished` : `Mark ${todayLabel} Workout as Finished`}
-              </button>
-              <div className="workout-streak-text">
-                Completion can be marked only for <strong>{todayLabel}</strong>.
-              </div>
-              <div className="workout-streak-text">
-                Current streak: <strong>{workoutStreakDays} day{workoutStreakDays === 1 ? '' : 's'}</strong>
-              </div>
-            </div>
-            <div className="adherence-bars">
-              {workout7.map((d: { date: string; completed: boolean }) => (
-                <div key={`workout-${d.date}`} className="adherence-row">
-                  <div className="adherence-day">{safeWeekdayShort(d.date)}</div>
-                  <div className="adherence-track workout">
-                    <div className="adherence-fill workout" style={{ width: d.completed ? '100%' : '0%' }} />
-                  </div>
-                  <div className="workout-day-status">{d.completed ? 'Done' : 'Missed'}</div>
-                </div>
-              ))}
+            <div className="trend-grid">
+              {[
+                { label: 'Weight', values: weightTrendValues, suffix: ' kg', meta: 'progress' },
+                { label: 'Calories', values: calories7, suffix: ' kcal', meta: 'consumed' },
+                { label: 'Water', values: water7, suffix: '%', meta: 'target' },
+                { label: 'Protein', values: protein7Safe, suffix: ' g', meta: 'planned' }
+              ].map((item) => {
+                const dir = trendDirection(item.values);
+                const maxVal = Math.max(...item.values, 1);
+                return (
+                  <article key={item.label} className="trend-item">
+                    <div className="trend-top">
+                      <div className="trend-label">{item.label}</div>
+                      <div className={`trend-dir ${dir}`}>{dir === 'up' ? '▲' : dir === 'down' ? '▼' : '•'}</div>
+                    </div>
+                    <div className="trend-value">{trendDeltaText(item.values, item.suffix)}</div>
+                    <div className="trend-meta">{item.meta}</div>
+                    <div className="trend-sparkline">
+                      {item.values.map((val, idx) => {
+                        const height = Math.max(4, (val / maxVal) * 100);
+                        return (
+                          <div key={idx} className="sparkline-bar" style={{ height: `${height}%` }} />
+                        );
+                      })}
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           </section>
+        </div>
 
-          <section className="card consistency-card">
-            <div className="card-header">
-              <h3>Consistency Score</h3>
-              <span className="badge">Food + Water + Workout</span>
-            </div>
-            <div className="compliance-score">{consistencyScore}%</div>
-            <div className="compliance-bar">
-              <div className="compliance-fill" style={{ width: `${Math.min(100, Math.max(0, consistencyScore))}%` }} />
-            </div>
-            <p className="compliance-text">
-              Based on your active food, water, and workout streaks for the last 7 days.
-            </p>
-          </section>
-
+        <div className="bottom-row">
           <section className="card adherence-card">
             <div className="card-header">
-              <h3>Food, Water & Workout Streaks</h3>
+              <h3>All Streaks</h3>
               <span className="badge">Last 7 Days</span>
             </div>
-            <div className="adherence-today">
-              <div><strong>{hasTodayFoodLog ? 'Today Food' : 'Latest Food'}:</strong> {displayFoodPoint ? `${displayFoodPoint.food_progress_percent}%` : '—'}</div>
-              <div><strong>{hasTodayWaterLog ? 'Today Water' : 'Latest Water'}:</strong> {displayWaterPoint ? `${displayWaterPoint.water_progress_percent}%` : '—'}</div>
-              <div><strong>Workout ({todayLabel}):</strong> {workoutCompletedToday ? 'Finished' : 'Pending'}</div>
+            <div className="adherence-summary">
+              <div className="adherence-stat">
+                <span className="adherence-stat-icon">🍎</span>
+                <span className="adherence-stat-label">Food:</span>
+                <span className="adherence-stat-value">{foodStreakDays} days</span>
+              </div>
+              <div className="adherence-stat">
+                <span className="adherence-stat-icon">💧</span>
+                <span className="adherence-stat-label">Water:</span>
+                <span className="adherence-stat-value">{waterStreakDays} days</span>
+              </div>
+              <div className="adherence-stat">
+                <span className="adherence-stat-icon">🏃</span>
+                <span className="adherence-stat-label">Workout:</span>
+                <span className="adherence-stat-value">{workoutStreakDays} days</span>
+              </div>
             </div>
             <div className="adherence-bars">
-              {adherence7.length > 0 ? adherence7.map((d: any) => (
-                <div key={d.date} className="adherence-row">
-                  <div className="adherence-day">{safeWeekdayShort(d.date)}</div>
-                  <div className="adherence-track">
-                    <div className="adherence-fill food" style={{ width: `${Math.max(0, Math.min(100, Number(d.food_progress_percent || 0)))}%` }} />
+              {recentDates.map((dateKey: string) => {
+                const workoutDay = workout7.find((d: { date: string }) => d.date === dateKey);
+                const adherenceDay = adherence7.find((d: any) => String(d.date) === dateKey);
+                return (
+                  <div key={`all-${dateKey}`} className="adherence-row">
+                    <div className="adherence-day">{safeWeekdayShort(dateKey)}</div>
+                    <div className="adherence-track">
+                      <div className="adherence-fill food" style={{ width: `${Math.max(0, Math.min(100, Number(adherenceDay?.food_progress_percent || 0)))}%` }} />
+                    </div>
+                    <div className="adherence-track">
+                      <div className="adherence-fill water" style={{ width: `${Math.max(0, Math.min(100, Number(adherenceDay?.water_progress_percent || 0)))}%` }} />
+                    </div>
+                    <div className="adherence-track workout">
+                      <div className="adherence-fill workout" style={{ width: workoutDay?.completed ? '100%' : '0%' }} />
+                    </div>
                   </div>
-                  <div className="adherence-track">
-                    <div className="adherence-fill water" style={{ width: `${Math.max(0, Math.min(100, Number(d.water_progress_percent || 0)))}%` }} />
-                  </div>
-                </div>
-              )) : (
-                <div className="empty-chart">No food/water logs yet</div>
-              )}
+                );
+              })}
             </div>
           </section>
         </div>
@@ -1132,14 +1202,14 @@ const cssStyles = `
 @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&display=swap');
 
 :root {
-  --brand: #0b6e4f;
-  --brand-dark: #07543c;
-  --ink: #0f172a;
-  --muted: #475569;
-  --surface: #ffffff;
-  --line: #d7e2ec;
-  --bg: #eef4f8;
-  --accent: #ff8a00;
+  --brand: #10b981;
+  --brand-dark: #059669;
+  --ink: #ffffff;
+  --muted: #94a3b8;
+  --surface: rgba(255, 255, 255, 0.05);
+  --line: rgba(255, 255, 255, 0.1);
+  --bg: #0f172a;
+  --accent: #6366f1;
 }
 
 .dashboard-wrapper {
@@ -1148,9 +1218,29 @@ const cssStyles = `
   margin: 0 auto;
   padding: 34px 22px 40px;
   font-family: 'Sora', sans-serif;
-  background: white;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+  position: relative;
   min-height: 100vh;
   box-sizing: border-box;
+  overflow-x: hidden;
+}
+
+.dashboard-wrapper::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(circle at 20% 30%, rgba(16, 185, 129, 0.08) 0%, transparent 50%),
+              radial-gradient(circle at 80% 70%, rgba(99, 102, 241, 0.08) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.dashboard-wrapper > * {
+  position: relative;
+  z-index: 1;
 }
 
 .dash-header {
@@ -1167,6 +1257,10 @@ const cssStyles = `
   letter-spacing: -0.04em;
   margin: 0;
   color: var(--ink);
+  background: linear-gradient(135deg, #10b981, #6366f1);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .dash-header p {
@@ -1176,11 +1270,12 @@ const cssStyles = `
 }
 
 .bmi-badge {
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
   padding: 14px 24px;
   border-radius: 18px;
-  border: 1px solid #cde6de;
-  box-shadow: 0 16px 28px -24px rgba(2, 6, 23, 0.75);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  box-shadow: 0 16px 28px -12px rgba(16, 185, 129, 0.3);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1190,13 +1285,14 @@ const cssStyles = `
 .bmi-cat { font-size: 0.72rem; font-weight: 700; color: var(--muted); text-transform: uppercase; margin-top: 4px; }
 
 .quote-card.standout {
-  background: #0a707e;
+  background: rgba(16, 185, 129, 0.1);
+  backdrop-filter: blur(10px);
   border-radius: 26px;
   padding: 28px;
   color: #f8fafc;
   margin-bottom: 24px;
-  border: 1px solid #1f2937;
-  box-shadow: 0 22px 34px -28px rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  box-shadow: 0 22px 34px -28px rgba(16, 185, 129, 0.4);
   animation: riseIn 360ms ease;
 }
 
@@ -1208,109 +1304,346 @@ const cssStyles = `
 
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(205px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.alerts-banner {
+  background: rgba(245, 158, 11, 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 20px;
+  padding: 16px 20px;
   margin-bottom: 24px;
+}
+
+.alerts-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.alerts-icon {
+  font-size: 1.3rem;
+}
+
+.alerts-header h3 {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--ink);
+  margin: 0;
+  flex: 1;
+}
+
+.alerts-count {
+  background: rgba(245, 158, 11, 0.2);
+  color: #f59e0b;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.alerts-scroll {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.alert-chip {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 10px 16px;
+  flex-shrink: 0;
+}
+
+.alert-chip.high {
+  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.alert-chip.medium {
+  border-color: rgba(245, 158, 11, 0.5);
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.alert-chip-text {
+  font-size: 0.85rem;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.alert-keyword {
+  background: rgba(245, 158, 11, 0.3);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  border-radius: 6px;
+  padding: 0 4px;
+  font-weight: 800;
+}
+
+.alert-disease {
+  background: rgba(239, 68, 68, 0.3);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  border-radius: 6px;
+  padding: 0 4px;
+  font-weight: 800;
+}
+
+.alert-value {
+  background: rgba(59, 130, 246, 0.3);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.5);
+  border-radius: 6px;
+  padding: 0 4px;
+  font-weight: 800;
+}
+
+.reminders-banner {
+  background: rgba(99, 102, 241, 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: 20px;
+  padding: 16px 20px;
+  margin-bottom: 24px;
+}
+
+.reminders-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.reminders-icon {
+  font-size: 1.3rem;
+}
+
+.reminders-header h3 {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--ink);
+  margin: 0;
+  flex: 1;
+}
+
+.reminders-count {
+  background: rgba(99, 102, 241, 0.2);
+  color: #818cf8;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.reminders-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.reminder-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.reminder-card.workout {
+  border-color: rgba(249, 115, 22, 0.5);
+  background: rgba(249, 115, 22, 0.1);
+}
+
+.reminder-card.food {
+  border-color: rgba(16, 185, 129, 0.5);
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.reminder-card.water {
+  border-color: rgba(59, 130, 246, 0.5);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.reminder-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.reminder-text {
+  font-size: 0.85rem;
+  color: var(--ink);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.streaks-combined-card {
+  margin-bottom: 24px;
+}
+
+.adherence-summary {
+  display: flex;
+  justify-content: space-around;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 12px;
+}
+
+.adherence-stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.adherence-stat-icon {
+  font-size: 1.2rem;
+}
+
+.adherence-stat-label {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.adherence-stat-value {
+  font-size: 0.85rem;
+  color: var(--brand);
+  font-weight: 800;
 }
 
 .stat-card {
   position: relative;
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
   border-radius: 18px;
   padding: 16px;
   display: flex;
   align-items: center;
-  gap: 12px;
   border: 1px solid var(--line);
-  box-shadow: 0 16px 26px -24px rgba(15, 23, 42, 0.8);
+  box-shadow: 0 16px 26px -24px rgba(0, 0, 0, 0.3);
   transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
 }
 
 .stat-card:hover {
   transform: translateY(-2px);
-  border-color: #b7d4c9;
-  box-shadow: 0 20px 30px -24px rgba(15, 23, 42, 0.95);
+  border-color: rgba(16, 185, 129, 0.4);
+  box-shadow: 0 20px 30px -12px rgba(16, 185, 129, 0.3);
 }
 
-.stat-icon {
-  font-size: 0.76rem;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  color: #0f766e;
-  background: #ecfeff;
-  min-width: 54px;
-  height: 54px;
+.stat-content {
   display: flex;
   align-items: center;
-  justify-content: center;
-  border-radius: 14px;
-  border: 1px solid #bae6fd;
+  gap: 14px;
+  width: 100%;
 }
 
-.stat-info h4 { margin: 0; font-size: 0.72rem; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
-.stat-info p { margin: 3px 0 0; font-size: 1.15rem; font-weight: 800; color: var(--ink); }
+.stat-icon-large {
+  font-size: 2rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.stat-details {
+  min-width: 0;
+  flex: 1;
+}
+
+.stat-details h4 {
+  margin: 0;
+  font-size: 0.7rem;
+  color: var(--muted);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+.stat-details p {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--ink);
+  line-height: 1.2;
+}
 
 .main-content {
   display: grid;
-  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+  grid-template-columns: 1fr;
+  gap: 24px;
+}
+
+.top-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+}
+
+.chart-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+}
+
+.food-plan-content {
+  display: grid;
+  grid-template-columns: 350px 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+.food-plan-left {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.middle-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 18px;
 }
 
-.left-stack,
-.right-stack {
+.bottom-row {
   display: grid;
-  gap: 18px;
+  grid-template-columns: 1fr;
+  gap: 24px;
+  width: 100%;
+  max-width: 100%;
 }
 
 .alerts-card { margin-top: 0; }
 .alerts-list { display: grid; gap: 10px; }
 
-.alert-item {
-  border-radius: 12px;
-  padding: 12px;
-  border: 1px solid #e2e8f0;
-  background: #f8fafc;
-}
-
-.alert-item.high { border-color: #fecaca; background: #fff1f2; }
-.alert-item.medium { border-color: #fde68a; background: #fffbeb; }
-.alert-title {
-  font-size: 0.7rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  color: #334155;
-  margin-bottom: 4px;
-}
-.alert-msg { font-size: 0.9rem; color: #475569; font-weight: 600; }
-.alert-suggestions {
-  margin: 8px 0 0;
-  padding-left: 16px;
-  color: #334155;
-  font-size: 0.8rem;
-  line-height: 1.4;
-}
-
-.consistency-card .card-header { margin-bottom: 14px; }
+.consistency-card .card-header { margin-bottom: 14px; text-align: center; }
 
 .compliance-score {
   font-size: 2rem;
   font-weight: 800;
   color: var(--brand);
   margin-bottom: 10px;
+  text-align: center;
 }
 
 .compliance-bar {
   width: 100%;
   height: 12px;
   border-radius: 999px;
-  background: #e2e8f0;
+  background: rgba(255, 255, 255, 0.1);
   overflow: hidden;
   margin-bottom: 10px;
 }
 
 .compliance-fill {
   height: 100%;
-  background: #0f766e;
+  background: linear-gradient(90deg, var(--brand), var(--accent));
 }
 
 .compliance-text {
@@ -1318,6 +1651,39 @@ const cssStyles = `
   color: var(--muted);
   line-height: 1.45;
   margin: 0;
+  text-align: center;
+}
+
+.adherence-summary {
+  display: flex;
+  justify-content: space-around;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 12px;
+}
+
+.adherence-stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.adherence-stat-icon {
+  font-size: 1.2rem;
+}
+
+.adherence-stat-label {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.adherence-stat-value {
+  font-size: 0.85rem;
+  color: var(--brand);
+  font-weight: 800;
 }
 
 .adherence-card {
@@ -1330,7 +1696,7 @@ const cssStyles = `
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  color: #334155;
+  color: var(--ink);
   font-size: 0.85rem;
   font-weight: 600;
 }
@@ -1339,21 +1705,21 @@ const cssStyles = `
 
 .adherence-row {
   display: grid;
-  grid-template-columns: 40px 1fr 1fr;
+  grid-template-columns: 40px repeat(3, 1fr);
   gap: 8px;
   align-items: center;
 }
 
 .adherence-day {
   font-size: 0.72rem;
-  color: #64748b;
+  color: var(--muted);
   font-weight: 700;
 }
 
 .adherence-track {
   height: 10px;
   border-radius: 999px;
-  background: #e2e8f0;
+  background: rgba(255, 255, 255, 0.1);
   overflow: hidden;
 }
 
@@ -1361,10 +1727,10 @@ const cssStyles = `
 .adherence-fill.food { background: #10b981; }
 .adherence-fill.water { background: #3b82f6; }
 .adherence-fill.workout { background: #f97316; }
-.adherence-track.workout { background: #ffedd5; }
+.adherence-track.workout { background: rgba(249, 115, 22, 0.2); }
 .workout-day-status {
   font-size: 0.72rem;
-  color: #475569;
+  color: var(--muted);
   font-weight: 700;
   text-align: right;
 }
@@ -1375,10 +1741,10 @@ const cssStyles = `
   gap: 10px;
 }
 .trend-item {
-  border: 1px solid #dbe8f4;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   padding: 10px;
-  background: #f8fafc;
+  background: rgba(255, 255, 255, 0.03);
 }
 .trend-top {
   display: flex;
@@ -1389,7 +1755,7 @@ const cssStyles = `
 .trend-label {
   font-size: 0.75rem;
   font-weight: 800;
-  color: #334155;
+  color: var(--muted);
   text-transform: uppercase;
 }
 .trend-dir { font-weight: 900; font-size: 0.8rem; }
@@ -1399,12 +1765,33 @@ const cssStyles = `
 .trend-value {
   font-size: 1.1rem;
   font-weight: 800;
-  color: #0f172a;
+  color: var(--ink);
 }
 .trend-meta {
   font-size: 0.72rem;
-  color: #64748b;
+  color: var(--muted);
   font-weight: 600;
+}
+
+.trend-sparkline {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 40px;
+  margin-top: 10px;
+}
+
+.sparkline-bar {
+  flex: 1;
+  background: linear-gradient(180deg, var(--brand), var(--brand-dark));
+  border-radius: 2px;
+  min-height: 4px;
+  transition: all 0.3s ease;
+}
+
+.sparkline-bar:hover {
+  background: linear-gradient(180deg, var(--accent), #4f46e5);
+  transform: scaleY(1.1);
 }
 
 .goal-grid {
@@ -1412,46 +1799,48 @@ const cssStyles = `
   gap: 10px;
 }
 .goal-item {
-  border: 1px solid #dbe8f4;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   padding: 12px;
-  background: #f8fafc;
+  background: rgba(255, 255, 255, 0.03);
+  text-align: center;
 }
 .goal-item.active {
-  border-color: #a7f3d0;
-  background: #f0fdf4;
+  border-color: rgba(16, 185, 129, 0.4);
+  background: rgba(16, 185, 129, 0.1);
 }
 .goal-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   margin-bottom: 6px;
+  gap: 8px;
 }
 .goal-head h4 {
   margin: 0;
   font-size: 0.92rem;
-  color: #0f172a;
+  color: var(--ink);
   font-weight: 800;
 }
 .goal-badge {
   font-size: 0.62rem;
   text-transform: uppercase;
-  background: #dcfce7;
-  color: #166534;
+  background: rgba(16, 185, 129, 0.2);
+  color: var(--brand);
   border-radius: 999px;
   padding: 3px 8px;
   font-weight: 800;
 }
 .goal-line {
   font-size: 0.82rem;
-  color: #334155;
+  color: var(--muted);
   margin-top: 4px;
   font-weight: 600;
 }
 .goal-eta {
   margin-top: 6px;
   font-size: 0.8rem;
-  color: #0f766e;
+  color: var(--brand);
   font-weight: 800;
 }
 
@@ -1467,7 +1856,7 @@ const cssStyles = `
   background: #1d4ed8;
 }
 .workout-streak-text {
-  color: #334155;
+  color: var(--muted);
   font-size: 0.86rem;
 }
 
@@ -1477,7 +1866,7 @@ const cssStyles = `
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #64748b;
+  color: var(--muted);
   font-weight: 700;
   font-size: 0.9rem;
 }
@@ -1491,15 +1880,176 @@ const cssStyles = `
 
 .macro-section .card-header {
   width: 100%;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
+}
+
+.day-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.day-btn {
+  padding: 8px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.05);
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.day-btn:hover {
+  border-color: rgba(16, 185, 129, 0.3);
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.day-btn.active {
+  border-color: var(--brand);
+  background: rgba(16, 185, 129, 0.2);
+  color: var(--brand);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.total-calories-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(99, 102, 241, 0.2));
+  border: 2px solid rgba(16, 185, 129, 0.3);
+  border-radius: 20px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.calories-number {
+  font-size: 2.5rem;
+  font-weight: 800;
+  color: var(--brand);
+  line-height: 1;
+}
+
+.calories-label {
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: var(--muted);
+  letter-spacing: 0.1em;
+  margin-top: 4px;
+}
+
+.meal-breakdown {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  overflow-y: auto;
+  max-height: 500px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.meal-breakdown::-webkit-scrollbar {
+  display: none;
+}
+
+.meal-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  padding: 14px;
+  transition: all 0.2s ease;
+}
+
+.meal-card:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(16, 185, 129, 0.3);
+  transform: translateX(4px);
+}
+
+.meal-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.meal-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.meal-name {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--ink);
+  flex: 1;
+}
+
+.meal-percentage {
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--brand);
+  background: rgba(16, 185, 129, 0.15);
+  padding: 4px 10px;
+  border-radius: 8px;
+}
+
+.meal-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.meal-cal {
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: var(--brand);
+}
+
+.meal-macro {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.meal-items {
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.meal-foods {
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.5;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.foods-label {
+  font-weight: 700;
+  color: var(--ink);
 }
 
 .card {
   background: var(--surface);
+  backdrop-filter: blur(10px);
   border-radius: 20px;
-  padding: 22px;
+  padding: 16px;
   border: 1px solid var(--line);
-  box-shadow: 0 24px 34px -30px rgba(15, 23, 42, 0.9);
+  box-shadow: 0 24px 34px -30px rgba(0, 0, 0, 0.3);
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .card-header {
@@ -1514,11 +2064,12 @@ const cssStyles = `
   margin: 0;
   font-size: 1.06rem;
   letter-spacing: -0.02em;
+  color: var(--ink);
 }
 
 .badge {
-  background: #dcfce7;
-  color: #166534;
+  background: rgba(16, 185, 129, 0.2);
+  color: var(--brand);
   padding: 5px 12px;
   border-radius: 999px;
   font-size: 0.68rem;
@@ -1528,37 +2079,55 @@ const cssStyles = `
 }
 
 .chart-section {
-  background: #ffffff;
+  background: var(--surface);
+  padding: 16px;
+}
+
+.chart-with-stats {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 20px;
+  margin-top: 8px;
 }
 
 .chart-container {
-  height: 430px;
-  margin-top: 12px;
+  height: 320px;
   border-radius: 14px;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  padding: 10px 10px 2px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 4px 4px 0px;
+}
+
+.log-stats-sidebar {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  height: fit-content;
 }
 
 .input-group { margin-bottom: 14px; }
-.input-group label { font-size: 0.82rem; font-weight: 700; margin-bottom: 7px; display: block; color: var(--ink); }
+.input-group label { font-size: 0.82rem; font-weight: 700; margin-bottom: 7px; display: block; color: var(--brand); }
 .input-group input,
 .input-group textarea {
   width: 100%;
   padding: 13px 14px;
   border-radius: 12px;
-  border: 1px solid #d8e1ea;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   font-family: inherit;
   font-size: 0.95rem;
-  background: #f8fafc;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--ink);
   box-sizing: border-box;
 }
 
 .input-group input:focus,
 .input-group textarea:focus {
   outline: none;
-  border-color: #94a3b8;
-  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.2);
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
 }
 
 .btn-primary {
@@ -1566,16 +2135,16 @@ const cssStyles = `
   padding: 13px;
   border-radius: 12px;
   border: none;
-  background: #0f766e;
+  background: linear-gradient(135deg, var(--brand), var(--brand-dark));
   color: white;
   font-weight: 800;
   font-size: 0.95rem;
   cursor: pointer;
-  box-shadow: 0 14px 24px -16px rgba(2, 132, 199, 0.75);
+  box-shadow: 0 14px 24px -16px rgba(16, 185, 129, 0.5);
   transition: transform 140ms ease, filter 140ms ease;
 }
 
-.btn-primary:hover { transform: translateY(-1px); filter: brightness(1.03); }
+.btn-primary:hover { transform: translateY(-1px); filter: brightness(1.1); }
 
 .loader-container { height: 100vh; display: flex; align-items: center; justify-content: center; }
 .spinner {
@@ -1592,6 +2161,13 @@ const cssStyles = `
 
 @media (max-width: 1160px) {
   .main-content { grid-template-columns: 1fr; }
+  .top-row { grid-template-columns: 1fr; }
+  .middle-row { grid-template-columns: 1fr; }
+  .bottom-row { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 900px) {
+  .bottom-row { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 760px) {
@@ -1599,12 +2175,17 @@ const cssStyles = `
   .dash-header { flex-direction: column; align-items: flex-start; }
   .card { padding: 16px; border-radius: 16px; }
   .quote-card.standout { border-radius: 18px; padding: 18px; }
-  .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .stat-card { padding: 12px; border-radius: 14px; gap: 8px; }
-  .stat-icon { min-width: 44px; height: 44px; border-radius: 10px; font-size: 0.62rem; }
-  .stat-info p { font-size: 0.95rem; }
+  .stats-grid { grid-template-columns: 1fr; }
+  .stat-card { padding: 14px; border-radius: 14px; }
+  .stat-icon-large { font-size: 1.6rem; }
+  .stat-details h4 { font-size: 0.65rem; }
+  .stat-details p { font-size: 0.95rem; }
+  .chart-with-stats { grid-template-columns: 1fr; }
   .chart-container { height: 280px; }
-  .adherence-today { flex-direction: column; }
+  .adherence-summary { flex-direction: column; gap: 8px; }
+  .adherence-row { grid-template-columns: 40px 1fr; }
+  .adherence-track:nth-child(3), .adherence-track:nth-child(4) { display: none; }
   .trend-grid { grid-template-columns: 1fr; }
+  .food-plan-content { grid-template-columns: 1fr; }
 }
 `;

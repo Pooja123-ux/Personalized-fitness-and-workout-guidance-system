@@ -96,12 +96,45 @@ def _extract_exercise_type(name: str) -> Dict[str, Any]:
 
 @router.get("/instructions")
 def get_instructions(name: str = Query(...), user=Depends(get_current_user)) -> Dict[str, object]:
+    # Normalize the search term and handle common variations
     n = _norm(name)
-    m = df[df["name"].apply(lambda x: _norm(x) == n)]
+    # Handle plural forms by removing trailing 's'
+    n_singular = n.rstrip('s') if n.endswith('s') and len(n) > 2 else n
+    # Replace spaces with hyphens for better matching (e.g., "pull ups" -> "pull-ups")
+    n_hyphenated = n.replace(" ", "-")
+    n_singular_hyphenated = n_singular.replace(" ", "-")
+    
+    # Try exact match first (with both space and hyphen variations, and singular/plural)
+    m = df[df["name"].apply(lambda x: (
+        _norm(x) == n or 
+        _norm(x) == n_singular or
+        _norm(x) == n_hyphenated or 
+        _norm(x) == n_singular_hyphenated or
+        _norm(x).replace("-", " ") == n or
+        _norm(x).replace("-", " ") == n_singular
+    ))]
+    
+    # Try partial match if exact match fails, but prioritize matches that start with the search term
     if m.empty:
-        m = df[df["name"].apply(lambda x: n in _norm(x))]
+        # First try matches that start with the search term
+        m = df[df["name"].apply(lambda x: (
+            _norm(x).startswith(n) or 
+            _norm(x).startswith(n_singular) or
+            _norm(x).startswith(n_hyphenated) or
+            _norm(x).startswith(n_singular_hyphenated)
+        ))]
+        
+        # If still empty, try contains match
+        if m.empty:
+            m = df[df["name"].apply(lambda x: (
+                n in _norm(x) or 
+                n_singular in _norm(x) or
+                n_hyphenated in _norm(x).replace(" ", "-") or
+                n_singular_hyphenated in _norm(x).replace(" ", "-")
+            ))]
+    
     if m.empty:
-        return {"name": name, "gifUrl": "", "instructions": []}
+        return {"name": name, "gifUrl": "", "instructions": [], "error": f"Exercise '{name}' not found. Try searching for similar exercises."}
     r = m.iloc[0]
     instr_cols = [c for c in df.columns if c.startswith("instructions/")]
     instructions: List[str] = []

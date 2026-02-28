@@ -3,8 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from app.database import Base, engine
-from app import models  # noqa: F401 ensures model metadata is registered
-from app.routers import auth, profile, progress, reports, recommendations, images, chat, exercises, conversational_chat, nutrition, public_nutrition, weekly_meal_plan, public_weekly_meal_plan, weekly_workout_plan, adherence
+from app import models  # type: ignore
+from app.routers import auth, profile, progress, reports, recommendations, images, chat, exercises, conversational_chat, nutrition, public_nutrition, weekly_meal_plan, public_weekly_meal_plan, weekly_workout_plan, adherence, faq
 
 app = FastAPI(title="Personalized Fitness API")
 
@@ -43,6 +43,7 @@ app.include_router(weekly_meal_plan.router, prefix="/meal-plan")
 app.include_router(public_weekly_meal_plan.router, prefix="/public-meal-plan")
 app.include_router(weekly_workout_plan.router, prefix="/workout-plan")
 app.include_router(adherence.router, prefix="/adherence")
+app.include_router(faq.router, prefix="/faq")
 
 # Serve local exercise GIF assets from backend/app/gifs
 GIF_DIR = Path(__file__).resolve().parent / "gifs"

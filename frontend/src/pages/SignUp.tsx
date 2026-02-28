@@ -47,7 +47,7 @@ function SignUp() {
                 height="18" 
                 viewBox="0 0 24 24" 
                 fill="none" 
-                stroke="#00B894" 
+                stroke="#16a34a" 
                 strokeWidth="2" 
                 strokeLinecap="round" 
                 strokeLinejoin="round"
@@ -130,7 +130,7 @@ const styles: Record<string, CSSProperties> = {
     minHeight: '100vh',
     display: 'flex',
     flexDirection: 'column',
-    backgroundColor: '#F8FAFC', 
+    backgroundColor: '#f0fdfa', 
     fontFamily: '"Inter", -apple-system, sans-serif',
   },
   topHeader: {
@@ -162,7 +162,7 @@ const styles: Record<string, CSSProperties> = {
     width: '30px',
     height: '30px',
     borderRadius: '8px',
-    backgroundColor: 'rgba(0, 184, 148, 0.08)',
+    backgroundColor: 'rgba(22, 163, 74, 0.1)',
   },
   logoTitleGroup: {
     display: 'flex',
@@ -178,7 +178,7 @@ const styles: Record<string, CSSProperties> = {
     textTransform: 'uppercase',
   },
   brandHighlight: {
-    color: '#0F172A',
+    color: '#166534',
     fontWeight: 700,
   },
   brandDivider: {
@@ -267,11 +267,11 @@ const styles: Record<string, CSSProperties> = {
     borderRadius: '12px',
     fontSize: '15px',
     fontWeight: 700,
-    color: '#ffffff',
-    background: '#0F172A', 
+    color: '#062e12',
+    background: 'linear-gradient(90deg, #16a34a, #22c55e)', 
     cursor: 'pointer',
     marginTop: '10px',
-    boxShadow: '0 4px 6px -1px rgba(15, 23, 42, 0.15)',
+    boxShadow: '0 4px 6px -1px rgba(22, 163, 74, 0.3)',
   },
   footer: {
     marginTop: '32px',
@@ -280,10 +280,10 @@ const styles: Record<string, CSSProperties> = {
     color: '#64748B',
   },
   link: {
-    color: '#00B894',
+    color: '#16a34a',
     fontWeight: 700,
     textDecoration: 'none',
-    borderBottom: '1.5px solid rgba(0, 184, 148, 0.2)',
+    borderBottom: '1.5px solid rgba(22, 163, 74, 0.3)',
   },
 }
 

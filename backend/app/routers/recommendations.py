@@ -19,7 +19,9 @@ def get_recommendations(
     # ---------------- WATER INTAKE ----------------
     water_l = 2.0
     if profile and profile.weight_kg is not None:
-        water_l = round(max(1.8, float(profile.weight_kg) * 0.033), 2)
+        weight_float = float(profile.weight_kg)
+        water_calc = weight_float * 0.033
+        water_l = round(max(1.8, water_calc), 2)
 
     # ---------------- DEFAULT FALLBACK ----------------
     lifestyle_level = getattr(profile, "lifestyle_level", None) or "sedentary"
@@ -31,8 +33,10 @@ def get_recommendations(
     lunch = getattr(profile, "lunch", None) or ""
     snacks = getattr(profile, "snacks", None) or ""
     dinner = getattr(profile, "dinner", None) or ""
-    height_cm = getattr(profile, "height_cm", 170)
-    weight_kg = getattr(profile, "weight_kg", 70)
+    height_val = getattr(profile, "height_cm", None) if profile else None
+    weight_val = getattr(profile, "weight_kg", None) if profile else None
+    height_cm = float(height_val) if height_val is not None else 170.0
+    weight_kg = float(weight_val) if weight_val is not None else 70.0
     level = getattr(profile, "level", "beginner")
     age = getattr(profile, "age", None)
     gender = getattr(profile, "gender", None)

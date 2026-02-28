@@ -253,6 +253,11 @@ function Reports() {
   }, [items]);
 
   const analyzedCount = items.filter(i => !!i.summary).length;
+  const comparisonAlertMeta = (level: DiseaseTrendAlert['level']) => {
+    if (level === 'warning') return { icon: '\u26A0\uFE0F', prefix: 'Alert' };
+    if (level === 'good') return { icon: '\u2705', prefix: 'Improved' };
+    return { icon: '\u2139\uFE0F', prefix: 'Stable' };
+  };
 
   return (
     <div className="reports-container">
@@ -265,8 +270,22 @@ function Reports() {
           padding: 40px 24px;
           font-family: 'Plus Jakarta Sans', sans-serif;
           min-height: 100vh;
-          background: #f8fafc;
+          background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
           box-sizing: border-box;
+          position: relative;
+        }
+
+        .reports-container::before {
+          content: '';
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: radial-gradient(circle at 20% 30%, rgba(16, 185, 129, 0.08) 0%, transparent 50%),
+                      radial-gradient(circle at 80% 70%, rgba(99, 102, 241, 0.08) 0%, transparent 50%);
+          pointer-events: none;
+          z-index: 0;
         }
 
         .reports-header {
@@ -275,18 +294,20 @@ function Reports() {
           justify-content: space-between;
           gap: 12px;
           margin-bottom: 32px;
+          position: relative;
+          z-index: 1;
         }
 
         .reports-header h2 {
           font-size: 2.5rem;
           font-weight: 800;
-          color: #1e293b;
+          color: #f1f5f9;
           margin: 0;
           letter-spacing: -1.5px;
         }
 
         .reports-header p {
-          color: #64748b;
+          color: #cbd5e1;
           font-size: 1.1rem;
           margin-top: 8px;
           font-weight: 500;
@@ -299,35 +320,37 @@ function Reports() {
         }
 
         .header-pill {
-          background: white;
-          border: 1px solid #e2e8f0;
+          background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+          border: 1px solid #475569;
           border-radius: 999px;
           padding: 8px 12px;
           font-weight: 800;
           font-size: 0.8rem;
-          color: #334155;
+          color: #f1f5f9;
         }
 
         .upload-zone {
           margin-bottom: 40px;
+          position: relative;
+          z-index: 1;
         }
 
         .upload-card {
           display: flex;
           align-items: center;
           gap: 25px;
-          background: white;
-          border: 2px dashed #e2e8f0;
+          background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+          border: 2px dashed #475569;
           padding: 35px;
           border-radius: 32px;
           cursor: pointer;
           transition: 0.3s ease;
-          box-shadow: 0 10px 25px rgba(0,0,0,0.02);
+          box-shadow: 0 10px 25px rgba(0,0,0,0.3);
         }
 
         .upload-card:hover {
           border-color: #6366f1;
-          background: #fcfcff;
+          background: linear-gradient(135deg, #312e81 0%, #4338ca 100%);
           transform: translateY(-2px);
         }
 
@@ -335,7 +358,7 @@ function Reports() {
           opacity: 0.7;
           cursor: not-allowed;
           border-color: #6366f1;
-          background: #f5f3ff;
+          background: linear-gradient(135deg, #312e81 0%, #4338ca 100%);
         }
 
         .upload-icon {
@@ -356,39 +379,44 @@ function Reports() {
           display: block;
           font-size: 1.2rem;
           font-weight: 800;
-          color: #1e293b;
+          color: #f1f5f9;
         }
 
         .upload-text span {
           font-size: 0.95rem;
-          color: #64748b;
+          color: #cbd5e1;
           font-weight: 500;
         }
 
         .reports-grid {
           display: grid;
           gap: 25px;
+          position: relative;
+          z-index: 1;
         }
 
         .comparison-box {
           margin-bottom: 24px;
-          background: #f8fafc;
-          border: 1px solid #dbe3ef;
+          background: linear-gradient(145deg, #1e293b 0%, #334155 60%, #3730a3 100%);
+          border: 1px solid #4f46e5;
           border-radius: 20px;
-          padding: 18px 20px;
+          padding: 20px 22px;
+          box-shadow: 0 14px 30px -22px rgba(0, 0, 0, 0.8);
+          position: relative;
+          z-index: 1;
         }
 
         .comparison-title {
           margin: 0 0 8px 0;
-          font-size: 0.95rem;
+          font-size: 1.02rem;
           font-weight: 800;
-          color: #0f172a;
+          color: #f1f5f9;
           letter-spacing: 0.02em;
         }
 
         .comparison-note {
           margin: 0;
-          color: #334155;
+          color: #e2e8f0;
           font-size: 0.9rem;
           font-weight: 600;
         }
@@ -400,44 +428,76 @@ function Reports() {
         }
 
         .comparison-item {
-          background: #ffffff;
-          border: 1px solid #e2e8f0;
+          background: linear-gradient(180deg, #1e293b 0%, #334155 100%);
+          border: 1px solid #475569;
           border-radius: 12px;
           padding: 10px 12px;
           font-size: 0.84rem;
-          color: #334155;
+          color: #e2e8f0;
           font-weight: 600;
+          box-shadow: 0 8px 16px -14px rgba(0, 0, 0, 0.8);
+          display: flex;
+          align-items: flex-start;
+          gap: 8px;
+        }
+
+        .comparison-icon {
+          font-size: 0.95rem;
+          line-height: 1;
+          margin-top: 1px;
+        }
+
+        .comparison-text {
+          min-width: 0;
+        }
+
+        .comparison-disease {
+          background: #581c87;
+          color: #e9d5ff;
+          border: 1px solid #7c3aed;
+          border-radius: 7px;
+          padding: 1px 6px;
+          font-weight: 800;
+        }
+
+        .comparison-value {
+          background: #065f46;
+          color: #a7f3d0;
+          border: 1px solid #10b981;
+          border-radius: 7px;
+          padding: 1px 6px;
+          font-weight: 800;
         }
 
         .comparison-item.warning {
-          border-color: #fecaca;
-          background: #fef2f2;
-          color: #991b1b;
+          border-color: #ef4444;
+          background: linear-gradient(180deg, #7f1d1d 0%, #991b1b 100%);
+          color: #fecaca;
         }
 
         .comparison-item.good {
-          border-color: #bbf7d0;
-          background: #f0fdf4;
-          color: #166534;
+          border-color: #10b981;
+          background: linear-gradient(180deg, #064e3b 0%, #065f46 100%);
+          color: #a7f3d0;
         }
 
         .comparison-item.neutral {
-          border-color: #cbd5e1;
-          background: #f8fafc;
-          color: #334155;
+          border-color: #3b82f6;
+          background: linear-gradient(180deg, #1e3a8a 0%, #1e40af 100%);
+          color: #bfdbfe;
         }
 
         .vault-card {
-          background: white;
+          background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
           border-radius: 32px;
           padding: 30px;
-          border: 1px solid #f1f5f9;
-          box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02);
+          border: 1px solid #475569;
+          box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3);
           transition: 0.3s ease;
         }
 
         .vault-card:hover {
-          box-shadow: 0 20px 25px -5px rgba(0,0,0,0.05);
+          box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5);
         }
 
         .vault-header {
@@ -464,19 +524,19 @@ function Reports() {
         .file-name {
           font-size: 1.15rem;
           font-weight: 800;
-          color: #1e293b;
+          color: #f1f5f9;
           text-decoration: none;
           display: block;
           transition: 0.2s;
         }
 
         .file-name:hover {
-          color: #6366f1;
+          color: #a78bfa;
         }
 
         .file-date {
           font-size: 0.85rem;
-          color: #94a3b8;
+          color: #cbd5e1;
           font-weight: 600;
         }
 
@@ -500,9 +560,9 @@ function Reports() {
         .delete-btn {
           padding: 12px 16px;
           border-radius: 16px;
-          border: 1px solid #fecaca;
-          background: #fff1f2;
-          color: #be123c;
+          border: 1px solid #ef4444;
+          background: linear-gradient(135deg, #7f1d1d 0%, #991b1b 100%);
+          color: #fecaca;
           font-size: 0.86rem;
           font-weight: 800;
           cursor: pointer;
@@ -511,7 +571,7 @@ function Reports() {
 
         .delete-btn:hover:not(:disabled) {
           transform: translateY(-1px);
-          background: #ffe4e6;
+          background: linear-gradient(135deg, #991b1b 0%, #b91c1c 100%);
         }
 
         .delete-btn:disabled {
@@ -520,7 +580,7 @@ function Reports() {
         }
 
         .summary-box {
-          background: #f8fafc;
+          background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
           border-radius: 24px;
           padding: 24px;
           border-left: 6px solid #10b981;
@@ -529,7 +589,7 @@ function Reports() {
         .summary-label {
           font-size: 0.8rem;
           font-weight: 800;
-          color: #059669;
+          color: #10b981;
           text-transform: uppercase;
           margin-bottom: 15px;
           display: flex;
@@ -541,13 +601,13 @@ function Reports() {
         .empty-state {
           text-align: center;
           padding: 100px 0;
-          color: #94a3b8;
+          color: #cbd5e1;
           font-weight: 700;
         }
 
         .summary-title {
           font-size: 0.85rem;
-          color: #64748b;
+          color: #cbd5e1;
           font-weight: 800;
           margin-bottom: 8px;
         }
@@ -572,9 +632,9 @@ function Reports() {
         }
 
         .token.lab {
-          background: white;
-          color: #0f172a;
-          border: 1px solid #e2e8f0;
+          background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+          color: #f1f5f9;
+          border: 1px solid #475569;
         }
 
         .food-grid {
@@ -589,13 +649,13 @@ function Reports() {
         }
 
         .food-box.consume {
-          background: #f0fdf4;
-          border: 1px solid #dcfce7;
+          background: linear-gradient(135deg, #064e3b 0%, #065f46 100%);
+          border: 1px solid #10b981;
         }
 
         .food-box.avoid {
-          background: #fef2f2;
-          border: 1px solid #fee2e2;
+          background: linear-gradient(135deg, #7f1d1d 0%, #991b1b 100%);
+          border: 1px solid #ef4444;
         }
 
         .food-title {
@@ -604,19 +664,19 @@ function Reports() {
           margin-bottom: 10px;
         }
 
-        .food-box.consume .food-title { color: #16a34a; }
-        .food-box.avoid .food-title { color: #dc2626; }
+        .food-box.consume .food-title { color: #a7f3d0; }
+        .food-box.avoid .food-title { color: #fecaca; }
 
         .food-token.consume {
-          background: white;
-          color: #065f46;
-          border: 1px solid #bbf7d0;
+          background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+          color: #a7f3d0;
+          border: 1px solid #10b981;
         }
 
         .food-token.avoid {
-          background: white;
-          color: #7f1d1d;
-          border: 1px solid #fecaca;
+          background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+          color: #fecaca;
+          border: 1px solid #ef4444;
         }
 
         @media (max-width: 760px) {
@@ -668,18 +728,25 @@ function Reports() {
             <div className="comparison-list">
               {reportComparison.duplicateGroups.slice(0, 3).map((group, idx) => (
                 <div key={idx} className="comparison-item">
-                  Matching group: {group.map((report) => report.filename).join(', ')} ({group.length} uploads)
+                  <span className="comparison-icon" aria-hidden="true">{'\u{1F4CE}'}</span>
+                  <span className="comparison-text">Matching group: {group.map((report) => report.filename).join(', ')} ({group.length} uploads)</span>
                 </div>
               ))}
             </div>
           )}
           {reportComparison.diseaseTrendAlerts.length > 0 && (
             <div className="comparison-list">
-              {reportComparison.diseaseTrendAlerts.slice(0, 8).map((alert, idx) => (
-                <div key={`${alert.condition}-${alert.lab}-${idx}`} className={`comparison-item ${alert.level}`}>
-                  {alert.level === 'warning' ? 'ALERT:' : alert.level === 'good' ? 'Improved:' : 'Stable:'} {alert.condition} - {alert.lab} {alert.direction === 'up' ? 'went up' : alert.direction === 'down' ? 'fell down' : 'did not change'} ({alert.previousValue} {'->'} {alert.currentValue}{alert.changePercent !== null ? `, ${alert.changePercent > 0 ? '+' : ''}${alert.changePercent}%` : ''})
-                </div>
-              ))}
+              {reportComparison.diseaseTrendAlerts.slice(0, 8).map((alert, idx) => {
+                const meta = comparisonAlertMeta(alert.level);
+                return (
+                  <div key={`${alert.condition}-${alert.lab}-${idx}`} className={`comparison-item ${alert.level}`}>
+                    <span className="comparison-icon" aria-hidden="true">{meta.icon}</span>
+                    <span className="comparison-text">
+                      <strong>{meta.prefix}:</strong> <span className="comparison-disease">{alert.condition}</span> - {alert.lab} {alert.direction === 'up' ? 'went up' : alert.direction === 'down' ? 'fell down' : 'did not change'} (<span className="comparison-value">{alert.previousValue}</span> {'->'} <span className="comparison-value">{alert.currentValue}</span>{alert.changePercent !== null ? <><span>{', '}</span><span className="comparison-value">{`${alert.changePercent > 0 ? '+' : ''}${alert.changePercent}%`}</span></> : ''})
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -741,12 +808,12 @@ function Reports() {
                       <div>
                         {conditions.length > 0 && (
                           <div style={{ marginBottom: 15 }}>
-                            <div style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 800, marginBottom: 8 }}>
+                            <div style={{ fontSize: '0.85rem', color: '#cbd5e1', fontWeight: 800, marginBottom: 8 }}>
                               Detected Conditions
                             </div>
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                               {conditions.map((c) => (
-                                <span key={c} style={{ background: '#ecfeff', color: '#0891b2', padding: '6px 14px', borderRadius: 12, fontWeight: 800, fontSize: '0.8rem' }}>
+                                <span key={c} style={{ background: 'linear-gradient(135deg, #0e7490 0%, #0891b2 100%)', color: '#cffafe', padding: '6px 14px', borderRadius: 12, fontWeight: 800, fontSize: '0.8rem', border: '1px solid #06b6d4' }}>
                                   {c}
                                 </span>
                               ))}
@@ -755,12 +822,12 @@ function Reports() {
                         )}
                         {Object.keys(labs).length > 0 && (
                           <div style={{ marginBottom: 15 }}>
-                            <div style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 800, marginBottom: 8 }}>
+                            <div style={{ fontSize: '0.85rem', color: '#cbd5e1', fontWeight: 800, marginBottom: 8 }}>
                               Key Labs
                             </div>
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                               {Object.entries(labs).map(([k, v]) => (
-                                <span key={k} style={{ background: 'white', border: '1px solid #e2e8f0', color: '#0f172a', padding: '6px 14px', borderRadius: 12, fontWeight: 800, fontSize: '0.8rem' }}>
+                                <span key={k} style={{ background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)', border: '1px solid #475569', color: '#f1f5f9', padding: '6px 14px', borderRadius: 12, fontWeight: 800, fontSize: '0.8rem' }}>
                                   {k.toUpperCase()}: {String(v)}
                                 </span>
                               ))}
@@ -768,36 +835,36 @@ function Reports() {
                           </div>
                         )}
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 15 }}>
-                          <div style={{ background: '#f0fdf4', border: '1px solid #dcfce7', borderRadius: 20, padding: 18 }}>
-                            <div style={{ fontSize: '0.85rem', fontWeight: 900, color: '#16a34a', marginBottom: 10 }}>
+                          <div style={{ background: 'linear-gradient(135deg, #064e3b 0%, #065f46 100%)', border: '1px solid #10b981', borderRadius: 20, padding: 18 }}>
+                            <div style={{ fontSize: '0.85rem', fontWeight: 900, color: '#a7f3d0', marginBottom: 10 }}>
                               Foods To Consume
                             </div>
                             {consume.length > 0 ? (
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                                 {consume.slice(0, 18).map((f) => (
-                                  <span key={f} style={{ background: 'white', color: '#065f46', padding: '4px 10px', borderRadius: 8, fontWeight: 700, fontSize: '0.75rem', border: '1px solid #bbf7d0' }}>
+                                  <span key={f} style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', color: '#a7f3d0', padding: '4px 10px', borderRadius: 8, fontWeight: 700, fontSize: '0.75rem', border: '1px solid #10b981' }}>
                                     {f}
                                   </span>
                                 ))}
                               </div>
                             ) : (
-                              <div style={{ color: '#16a34a', opacity: 0.8, fontWeight: 700, fontSize: '0.9rem' }}>Not available</div>
+                              <div style={{ color: '#a7f3d0', opacity: 0.8, fontWeight: 700, fontSize: '0.9rem' }}>Not available</div>
                             )}
                           </div>
-                          <div style={{ background: '#fef2f2', border: '1px solid #fee2e2', borderRadius: 20, padding: 18 }}>
-                            <div style={{ fontSize: '0.85rem', fontWeight: 900, color: '#dc2626', marginBottom: 10 }}>
+                          <div style={{ background: 'linear-gradient(135deg, #7f1d1d 0%, #991b1b 100%)', border: '1px solid #ef4444', borderRadius: 20, padding: 18 }}>
+                            <div style={{ fontSize: '0.85rem', fontWeight: 900, color: '#fecaca', marginBottom: 10 }}>
                               Foods To Avoid
                             </div>
                             {avoid.length > 0 ? (
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                                 {avoid.slice(0, 18).map((f) => (
-                                  <span key={f} style={{ background: 'white', color: '#7f1d1d', padding: '4px 10px', borderRadius: 8, fontWeight: 700, fontSize: '0.75rem', border: '1px solid #fecaca' }}>
+                                  <span key={f} style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', color: '#fecaca', padding: '4px 10px', borderRadius: 8, fontWeight: 700, fontSize: '0.75rem', border: '1px solid #ef4444' }}>
                                     {f}
                                   </span>
                                 ))}
                               </div>
                             ) : (
-                              <div style={{ color: '#dc2626', opacity: 0.8, fontWeight: 700, fontSize: '0.9rem' }}>Not available</div>
+                              <div style={{ color: '#fecaca', opacity: 0.8, fontWeight: 700, fontSize: '0.9rem' }}>Not available</div>
                             )}
                           </div>
                         </div>

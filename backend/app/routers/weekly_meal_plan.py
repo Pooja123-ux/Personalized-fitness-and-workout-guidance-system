@@ -5,7 +5,7 @@ Dynamically updates recommendations based on weight changes and health reports
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, cast
 from datetime import datetime, date, timedelta
 from sqlalchemy.orm import Session
 from ..deps import get_db, get_current_user
@@ -60,6 +60,26 @@ class HealthTrigger(BaseModel):
 weekly_plans = {}
 health_triggers = HealthTrigger()
 
+
+def _to_float(value: Any) -> Optional[float]:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_datetime(value: Any) -> Optional[datetime]:
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
+    return None
+
 def calculate_bmi_category(bmi: float) -> str:
     """Calculate BMI category"""
     if bmi < 18.5:
@@ -79,21 +99,26 @@ def should_update_plan(
     """Determine if meal plan should be updated based on health changes"""
     
     reasons = []
+    profile_weight = _to_float(getattr(profile, "weight_kg", None))
+    profile_height = _to_float(getattr(profile, "height_cm", None))
     
     # Check weight change
-    if profile.weight_kg:
-        plan = current_plan or weekly_plans.get("current")
-        if plan and abs(profile.weight_kg - plan.based_on_weight) >= health_triggers.weight_change_threshold:
-            reasons.append(f"Weight changed by {abs(profile.weight_kg - plan.based_on_weight):.1f}kg")
+    if profile_weight is not None:
+        plan = current_plan or cast(Optional[WeeklyMealPlan], weekly_plans.get("current"))
+        threshold = float(getattr(health_triggers, "weight_change_threshold", 1.0))
+        if plan:
+            delta = abs(profile_weight - float(plan.based_on_weight))
+            if delta >= threshold:
+                reasons.append(f"Weight changed by {delta:.1f}kg")
     
     # Check BMI category change
-    if profile.height_cm and profile.weight_kg:
-        current_bmi = logic.compute_bmi(profile.height_cm, profile.weight_kg)
+    if profile_height is not None and profile_weight is not None:
+        current_bmi = logic.compute_bmi(profile_height, profile_weight)
         current_category = calculate_bmi_category(current_bmi)
         
-        plan = current_plan or weekly_plans.get("current")
+        plan = current_plan or cast(Optional[WeeklyMealPlan], weekly_plans.get("current"))
         if plan:
-            previous_bmi = logic.compute_bmi(profile.height_cm, plan.based_on_weight)
+            previous_bmi = logic.compute_bmi(profile_height, float(plan.based_on_weight))
             previous_category = calculate_bmi_category(previous_bmi)
             
             if current_category != previous_category:
@@ -101,9 +126,10 @@ def should_update_plan(
     
     # Check new health report
     if latest_report and health_triggers.new_health_condition:
-        plan = current_plan or weekly_plans.get("current")
+        plan = current_plan or cast(Optional[WeeklyMealPlan], weekly_plans.get("current"))
         if plan:
-            if latest_report.created_at > plan.last_updated:
+            report_created_at = _to_datetime(getattr(latest_report, "created_at", None))
+            if report_created_at and report_created_at > plan.last_updated:
                 reasons.append("New health report uploaded")
     
     should_update = len(reasons) > 0
@@ -163,14 +189,20 @@ def _parse_report_context(latest_report: Optional[Report]) -> Dict[str, Any]:
         "avoid": [],
         "summary_text": ""
     }
-    if not latest_report or not latest_report.summary:
+    if latest_report is None:
         return ctx
 
-    raw = latest_report.summary
+    raw_summary = getattr(latest_report, "summary", None)
+    if raw_summary is None:
+        return ctx
+
+    raw = str(raw_summary).strip()
+    if not raw:
+        return ctx
+
     data: Any = raw
     try:
-        if isinstance(raw, str):
-            data = json.loads(raw)
+        data = json.loads(raw)
     except Exception:
         data = raw
 
@@ -470,7 +502,7 @@ def generate_daily_meals(
     diseases: List[str],
     allergies: List[str],
     day_index: int = 0,
-    personalized_recommendations: List = None,
+    personalized_recommendations: Optional[List[Any]] = None,
     user_context: Optional[Dict[str, Any]] = None,
     report_context: Optional[Dict[str, Any]] = None,
     recent_foods: Optional[List[str]] = None
@@ -478,6 +510,7 @@ def generate_daily_meals(
     """Generate meals for a single day using personalized nutrition recommendations"""
     
     try:
+        personalized_recommendations = personalized_recommendations or []
         daily_fruits = ["Apple", "Orange", "Papaya", "Guava", "Pomegranate", "Pear", "Kiwi"]
         fallback_fruit = daily_fruits[day_index % len(daily_fruits)]
         user_context = user_context or {}
@@ -1070,8 +1103,8 @@ def generate_weekly_plan(profile_data: Dict, latest_report: Optional[Report] = N
     end_of_week = start_of_week + timedelta(days=6)
     
     return WeeklyMealPlan(
-        week_start=start_of_week.isoformat(),
-        week_end=end_of_week.isoformat(),
+        week_start=start_of_week,
+        week_end=end_of_week,
         meals=meals,
         weekly_calories=weekly_calories,
         weekly_protein=weekly_protein,
@@ -1079,7 +1112,7 @@ def generate_weekly_plan(profile_data: Dict, latest_report: Optional[Report] = N
         weekly_fats=weekly_fats,
         based_on_weight=weight_kg,
         based_on_health_report=report_ctx.get("summary_text") if report_ctx.get("summary_text") else None,
-        last_updated=datetime.now().isoformat(),
+        last_updated=datetime.now(),
         personalized_items=len(personalized_recommendations)
     )
 
