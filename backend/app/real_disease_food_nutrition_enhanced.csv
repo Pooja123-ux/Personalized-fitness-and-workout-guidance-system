@@ -1,0 +1,501 @@
+Condition,Food Item,Recommendation Type,Calories,Protein (g),Fat (g),Carbs (g),Fiber (g),Vitamin C (mg),Calcium (mg),reason,condition_aliases,protein_pct,carb_pct,fat_pct
+Diabetes,Carrots,Consume,41,0.9,0.2,9.6,2.8,5.9,33.0,Benefits: low calorie,"sugar, diabetes, diabetic, blood sugar, hyperglycemia, type 2 diabetes",8.8,93.7,4.4
+Diabetes,Walnuts,Consume,654,15.2,65.2,13.7,6.7,1.3,98.0,"Benefits: high fiber, good protein","sugar, diabetes, diabetic, blood sugar, hyperglycemia, type 2 diabetes",9.3,8.4,89.7
+Diabetes,Apple,Consume,52,0.3,0.2,14.0,2.4,4.6,6.0,Benefits: low calorie,"sugar, diabetes, diabetic, blood sugar, hyperglycemia, type 2 diabetes",2.3,107.7,3.5
+Diabetes,Broccoli,Consume,34,2.8,0.4,7.0,2.6,89.2,47.0,"Benefits: low calorie, rich in vitamin C","sugar, diabetes, diabetic, blood sugar, hyperglycemia, type 2 diabetes",32.9,82.4,10.6
+Diabetes,Beans,Consume,127,8.7,0.5,22.8,6.4,1.2,50.0,"Benefits: high fiber, good protein","sugar, diabetes, diabetic, blood sugar, hyperglycemia, type 2 diabetes",27.4,71.8,3.5
+Diabetes,Butter,Avoid,717,0.9,81.1,0.1,0.0,0.0,24.0,"Concerns: high calorie, high fat, no fiber","sugar, diabetes, diabetic, blood sugar, hyperglycemia, type 2 diabetes",0.5,0.1,101.8
+Diabetes,Sugary Drinks,Avoid,45,0.0,0.0,11.0,0.0,0.0,0.0,Concerns: no fiber,"sugar, diabetes, diabetic, blood sugar, hyperglycemia, type 2 diabetes",0.0,97.8,0.0
+Diabetes,Chips,Avoid,536,7.0,35.0,53.0,5.0,0.0,20.0,"Concerns: high calorie, high fat","sugar, diabetes, diabetic, blood sugar, hyperglycemia, type 2 diabetes",5.2,39.6,58.8
+Diabetes,Ice Cream,Avoid,207,3.5,11.0,24.0,0.5,0.5,128.0,Concerns: not recommended for this condition,"sugar, diabetes, diabetic, blood sugar, hyperglycemia, type 2 diabetes",6.8,46.4,47.8
+Diabetes,Butter,Avoid,717,0.9,81.1,0.1,0.0,0.0,24.0,"Concerns: high calorie, high fat, no fiber","sugar, diabetes, diabetic, blood sugar, hyperglycemia, type 2 diabetes",0.5,0.1,101.8
+Hypertension,Greek Yogurt,Consume,59,10.2,0.4,3.6,0.0,0.5,111.0,"Benefits: good protein, low calorie, calcium source","high blood pressure, bp, hypertension, blood pressure",69.2,24.4,6.1
+Hypertension,Sweet Potato,Consume,86,1.6,0.1,20.1,3.0,2.4,30.0,"Benefits: high fiber, low calorie","high blood pressure, bp, hypertension, blood pressure",7.4,93.5,1.0
+Hypertension,Almonds,Consume,579,21.2,49.9,21.6,12.5,0.0,264.0,"Benefits: high fiber, good protein, calcium source","high blood pressure, bp, hypertension, blood pressure",14.6,14.9,77.6
+Hypertension,Lentils,Consume,116,9.0,0.4,20.0,7.9,1.5,19.0,"Benefits: high fiber, good protein","high blood pressure, bp, hypertension, blood pressure",31.0,69.0,3.1
+Hypertension,Almonds,Consume,579,21.2,49.9,21.6,12.5,0.0,264.0,"Benefits: high fiber, good protein, calcium source","high blood pressure, bp, hypertension, blood pressure",14.6,14.9,77.6
+Hypertension,Red Meat,Avoid,250,26.0,15.0,0.0,0.0,0.0,18.0,Concerns: no fiber,"high blood pressure, bp, hypertension, blood pressure",41.6,0.0,54.0
+Hypertension,Processed Meat,Avoid,290,14.0,25.0,3.0,0.0,0.0,10.0,"Concerns: high fat, no fiber","high blood pressure, bp, hypertension, blood pressure",19.3,4.1,77.6
+Hypertension,Red Meat,Avoid,250,26.0,15.0,0.0,0.0,0.0,18.0,Concerns: no fiber,"high blood pressure, bp, hypertension, blood pressure",41.6,0.0,54.0
+Hypertension,Candy,Avoid,400,0.0,5.0,93.0,0.0,0.0,5.0,"Concerns: high calorie, high refined carbs, no fiber","high blood pressure, bp, hypertension, blood pressure",0.0,93.0,11.2
+Hypertension,High Salt Snacks,Avoid,480,6.0,22.0,65.0,2.0,0.0,20.0,"Concerns: high calorie, high fat","high blood pressure, bp, hypertension, blood pressure",5.0,54.2,41.2
+Heart Disease,Brown Rice,Consume,112,2.6,0.9,23.5,1.8,0.0,10.0,Benefits: nutritional support,"heart disease, cardiac, cardiovascular, coronary, heart health",9.3,83.9,7.2
+Heart Disease,Greek Yogurt,Consume,59,10.2,0.4,3.6,0.0,0.5,111.0,"Benefits: good protein, low calorie, calcium source","heart disease, cardiac, cardiovascular, coronary, heart health",69.2,24.4,6.1
+Heart Disease,Beans,Consume,127,8.7,0.5,22.8,6.4,1.2,50.0,"Benefits: high fiber, good protein","heart disease, cardiac, cardiovascular, coronary, heart health",27.4,71.8,3.5
+Heart Disease,Garlic,Consume,149,6.4,0.5,33.1,2.1,31.2,181.0,"Benefits: good protein, rich in vitamin C, calcium source","heart disease, cardiac, cardiovascular, coronary, heart health",17.2,88.9,3.0
+Heart Disease,Spinach,Consume,23,2.9,0.4,3.6,2.2,28.1,99.0,"Benefits: low calorie, rich in vitamin C","heart disease, cardiac, cardiovascular, coronary, heart health",50.4,62.6,15.7
+Heart Disease,High Salt Snacks,Avoid,480,6.0,22.0,65.0,2.0,0.0,20.0,"Concerns: high calorie, high fat","heart disease, cardiac, cardiovascular, coronary, heart health",5.0,54.2,41.2
+Heart Disease,Chips,Avoid,536,7.0,35.0,53.0,5.0,0.0,20.0,"Concerns: high calorie, high fat","heart disease, cardiac, cardiovascular, coronary, heart health",5.2,39.6,58.8
+Heart Disease,High Salt Snacks,Avoid,480,6.0,22.0,65.0,2.0,0.0,20.0,"Concerns: high calorie, high fat","heart disease, cardiac, cardiovascular, coronary, heart health",5.0,54.2,41.2
+Heart Disease,Full-fat Cheese,Avoid,402,25.0,33.0,1.3,0.0,0.0,721.0,"Concerns: high calorie, high fat, no fiber","heart disease, cardiac, cardiovascular, coronary, heart health",24.9,1.3,73.9
+Heart Disease,High Salt Snacks,Avoid,480,6.0,22.0,65.0,2.0,0.0,20.0,"Concerns: high calorie, high fat","heart disease, cardiac, cardiovascular, coronary, heart health",5.0,54.2,41.2
+Obesity,Green Tea,Consume,2,0.2,0.0,0.5,0.0,0.0,1.0,Benefits: low calorie,"obesity, obese, overweight, weight management",40.0,100.0,0.0
+Obesity,Tomatoes,Consume,18,0.9,0.2,3.9,1.2,14.0,10.0,"Benefits: low calorie, rich in vitamin C","obesity, obese, overweight, weight management",20.0,86.7,10.0
+Obesity,Carrots,Consume,41,0.9,0.2,9.6,2.8,5.9,33.0,Benefits: low calorie,"obesity, obese, overweight, weight management",8.8,93.7,4.4
+Obesity,Walnuts,Consume,654,15.2,65.2,13.7,6.7,1.3,98.0,"Benefits: high fiber, good protein","obesity, obese, overweight, weight management",9.3,8.4,89.7
+Obesity,Garlic,Consume,149,6.4,0.5,33.1,2.1,31.2,181.0,"Benefits: good protein, rich in vitamin C, calcium source","obesity, obese, overweight, weight management",17.2,88.9,3.0
+Obesity,Fried Food,Avoid,450,5.0,30.0,40.0,1.0,0.0,10.0,"Concerns: high calorie, high fat","obesity, obese, overweight, weight management",4.4,35.6,60.0
+Obesity,Alcohol,Avoid,220,0.0,0.0,20.0,0.0,0.0,0.0,Concerns: no fiber,"obesity, obese, overweight, weight management",0.0,36.4,0.0
+Obesity,Ice Cream,Avoid,207,3.5,11.0,24.0,0.5,0.5,128.0,Concerns: not recommended for this condition,"obesity, obese, overweight, weight management",6.8,46.4,47.8
+Obesity,Fried Food,Avoid,450,5.0,30.0,40.0,1.0,0.0,10.0,"Concerns: high calorie, high fat","obesity, obese, overweight, weight management",4.4,35.6,60.0
+Obesity,Butter,Avoid,717,0.9,81.1,0.1,0.0,0.0,24.0,"Concerns: high calorie, high fat, no fiber","obesity, obese, overweight, weight management",0.5,0.1,101.8
+Chronic Kidney Disease,Chia Seeds,Consume,486,16.5,30.7,42.1,34.4,1.6,631.0,"Benefits: high fiber, good protein, calcium source",chronic kidney disease,13.6,34.7,56.9
+Chronic Kidney Disease,Almonds,Consume,579,21.2,49.9,21.6,12.5,0.0,264.0,"Benefits: high fiber, good protein, calcium source",chronic kidney disease,14.6,14.9,77.6
+Chronic Kidney Disease,Tomatoes,Consume,18,0.9,0.2,3.9,1.2,14.0,10.0,"Benefits: low calorie, rich in vitamin C",chronic kidney disease,20.0,86.7,10.0
+Chronic Kidney Disease,Carrots,Consume,41,0.9,0.2,9.6,2.8,5.9,33.0,Benefits: low calorie,chronic kidney disease,8.8,93.7,4.4
+Chronic Kidney Disease,Greek Yogurt,Consume,59,10.2,0.4,3.6,0.0,0.5,111.0,"Benefits: good protein, low calorie, calcium source",chronic kidney disease,69.2,24.4,6.1
+Chronic Kidney Disease,Chips,Avoid,536,7.0,35.0,53.0,5.0,0.0,20.0,"Concerns: high calorie, high fat",chronic kidney disease,5.2,39.6,58.8
+Chronic Kidney Disease,Chips,Avoid,536,7.0,35.0,53.0,5.0,0.0,20.0,"Concerns: high calorie, high fat",chronic kidney disease,5.2,39.6,58.8
+Chronic Kidney Disease,Alcohol,Avoid,220,0.0,0.0,20.0,0.0,0.0,0.0,Concerns: no fiber,chronic kidney disease,0.0,36.4,0.0
+Chronic Kidney Disease,Candy,Avoid,400,0.0,5.0,93.0,0.0,0.0,5.0,"Concerns: high calorie, high refined carbs, no fiber",chronic kidney disease,0.0,93.0,11.2
+Chronic Kidney Disease,Chips,Avoid,536,7.0,35.0,53.0,5.0,0.0,20.0,"Concerns: high calorie, high fat",chronic kidney disease,5.2,39.6,58.8
+Anemia,Salmon,Consume,208,20.0,13.0,0.0,0.0,3.0,13.0,Benefits: good protein,"anemia, anaemia, iron deficiency, low hemoglobin",38.5,0.0,56.2
+Anemia,Apple,Consume,52,0.3,0.2,14.0,2.4,4.6,6.0,Benefits: low calorie,"anemia, anaemia, iron deficiency, low hemoglobin",2.3,107.7,3.5
+Anemia,Garlic,Consume,149,6.4,0.5,33.1,2.1,31.2,181.0,"Benefits: good protein, rich in vitamin C, calcium source","anemia, anaemia, iron deficiency, low hemoglobin",17.2,88.9,3.0
+Anemia,Sweet Potato,Consume,86,1.6,0.1,20.1,3.0,2.4,30.0,"Benefits: high fiber, low calorie","anemia, anaemia, iron deficiency, low hemoglobin",7.4,93.5,1.0
+Anemia,Lentils,Consume,116,9.0,0.4,20.0,7.9,1.5,19.0,"Benefits: high fiber, good protein","anemia, anaemia, iron deficiency, low hemoglobin",31.0,69.0,3.1
+Anemia,Candy,Avoid,400,0.0,5.0,93.0,0.0,0.0,5.0,"Concerns: high calorie, high refined carbs, no fiber","anemia, anaemia, iron deficiency, low hemoglobin",0.0,93.0,11.2
+Anemia,Processed Meat,Avoid,290,14.0,25.0,3.0,0.0,0.0,10.0,"Concerns: high fat, no fiber","anemia, anaemia, iron deficiency, low hemoglobin",19.3,4.1,77.6
+Anemia,Full-fat Cheese,Avoid,402,25.0,33.0,1.3,0.0,0.0,721.0,"Concerns: high calorie, high fat, no fiber","anemia, anaemia, iron deficiency, low hemoglobin",24.9,1.3,73.9
+Anemia,Sugary Drinks,Avoid,45,0.0,0.0,11.0,0.0,0.0,0.0,Concerns: no fiber,"anemia, anaemia, iron deficiency, low hemoglobin",0.0,97.8,0.0
+Anemia,Alcohol,Avoid,220,0.0,0.0,20.0,0.0,0.0,0.0,Concerns: no fiber,"anemia, anaemia, iron deficiency, low hemoglobin",0.0,36.4,0.0
+Osteoporosis,Quinoa,Consume,120,4.4,1.9,21.3,2.8,0.0,17.0,Benefits: nutritional support,osteoporosis,14.7,71.0,14.2
+Osteoporosis,Almonds,Consume,579,21.2,49.9,21.6,12.5,0.0,264.0,"Benefits: high fiber, good protein, calcium source",osteoporosis,14.6,14.9,77.6
+Osteoporosis,Salmon,Consume,208,20.0,13.0,0.0,0.0,3.0,13.0,Benefits: good protein,osteoporosis,38.5,0.0,56.2
+Osteoporosis,Beans,Consume,127,8.7,0.5,22.8,6.4,1.2,50.0,"Benefits: high fiber, good protein",osteoporosis,27.4,71.8,3.5
+Osteoporosis,Beans,Consume,127,8.7,0.5,22.8,6.4,1.2,50.0,"Benefits: high fiber, good protein",osteoporosis,27.4,71.8,3.5
+Osteoporosis,White Bread,Avoid,265,9.0,3.2,49.0,2.7,0.0,260.0,Concerns: not recommended for this condition,osteoporosis,13.6,74.0,10.9
+Osteoporosis,High Salt Snacks,Avoid,480,6.0,22.0,65.0,2.0,0.0,20.0,"Concerns: high calorie, high fat",osteoporosis,5.0,54.2,41.2
+Osteoporosis,Butter,Avoid,717,0.9,81.1,0.1,0.0,0.0,24.0,"Concerns: high calorie, high fat, no fiber",osteoporosis,0.5,0.1,101.8
+Osteoporosis,Pastries,Avoid,406,6.0,21.0,51.0,1.5,0.0,20.0,"Concerns: high calorie, high fat, high refined carbs",osteoporosis,5.9,50.2,46.6
+Osteoporosis,Fried Food,Avoid,450,5.0,30.0,40.0,1.0,0.0,10.0,"Concerns: high calorie, high fat",osteoporosis,4.4,35.6,60.0
+Asthma,Spinach,Consume,23,2.9,0.4,3.6,2.2,28.1,99.0,"Benefits: low calorie, rich in vitamin C",asthma,50.4,62.6,15.7
+Asthma,Broccoli,Consume,34,2.8,0.4,7.0,2.6,89.2,47.0,"Benefits: low calorie, rich in vitamin C",asthma,32.9,82.4,10.6
+Asthma,Brown Rice,Consume,112,2.6,0.9,23.5,1.8,0.0,10.0,Benefits: nutritional support,asthma,9.3,83.9,7.2
+Asthma,Almonds,Consume,579,21.2,49.9,21.6,12.5,0.0,264.0,"Benefits: high fiber, good protein, calcium source",asthma,14.6,14.9,77.6
+Asthma,Spinach,Consume,23,2.9,0.4,3.6,2.2,28.1,99.0,"Benefits: low calorie, rich in vitamin C",asthma,50.4,62.6,15.7
+Asthma,Full-fat Cheese,Avoid,402,25.0,33.0,1.3,0.0,0.0,721.0,"Concerns: high calorie, high fat, no fiber",asthma,24.9,1.3,73.9
+Asthma,White Bread,Avoid,265,9.0,3.2,49.0,2.7,0.0,260.0,Concerns: not recommended for this condition,asthma,13.6,74.0,10.9
+Asthma,Red Meat,Avoid,250,26.0,15.0,0.0,0.0,0.0,18.0,Concerns: no fiber,asthma,41.6,0.0,54.0
+Asthma,Candy,Avoid,400,0.0,5.0,93.0,0.0,0.0,5.0,"Concerns: high calorie, high refined carbs, no fiber",asthma,0.0,93.0,11.2
+Asthma,Red Meat,Avoid,250,26.0,15.0,0.0,0.0,0.0,18.0,Concerns: no fiber,asthma,41.6,0.0,54.0
+Cancer,Green Tea,Consume,2,0.2,0.0,0.5,0.0,0.0,1.0,Benefits: low calorie,cancer,40.0,100.0,0.0
+Cancer,Carrots,Consume,41,0.9,0.2,9.6,2.8,5.9,33.0,Benefits: low calorie,cancer,8.8,93.7,4.4
+Cancer,Brown Rice,Consume,112,2.6,0.9,23.5,1.8,0.0,10.0,Benefits: nutritional support,cancer,9.3,83.9,7.2
+Cancer,Sweet Potato,Consume,86,1.6,0.1,20.1,3.0,2.4,30.0,"Benefits: high fiber, low calorie",cancer,7.4,93.5,1.0
+Cancer,Chia Seeds,Consume,486,16.5,30.7,42.1,34.4,1.6,631.0,"Benefits: high fiber, good protein, calcium source",cancer,13.6,34.7,56.9
+Cancer,Processed Meat,Avoid,290,14.0,25.0,3.0,0.0,0.0,10.0,"Concerns: high fat, no fiber",cancer,19.3,4.1,77.6
+Cancer,Sugary Drinks,Avoid,45,0.0,0.0,11.0,0.0,0.0,0.0,Concerns: no fiber,cancer,0.0,97.8,0.0
+Cancer,Pastries,Avoid,406,6.0,21.0,51.0,1.5,0.0,20.0,"Concerns: high calorie, high fat, high refined carbs",cancer,5.9,50.2,46.6
+Cancer,Ice Cream,Avoid,207,3.5,11.0,24.0,0.5,0.5,128.0,Concerns: not recommended for this condition,cancer,6.8,46.4,47.8
+Cancer,Pastries,Avoid,406,6.0,21.0,51.0,1.5,0.0,20.0,"Concerns: high calorie, high fat, high refined carbs",cancer,5.9,50.2,46.6
+Alzheimer's Disease,Spinach,Consume,23,2.9,0.4,3.6,2.2,28.1,99.0,"Benefits: low calorie, rich in vitamin C",alzheimer's disease,50.4,62.6,15.7
+Alzheimer's Disease,Salmon,Consume,208,20.0,13.0,0.0,0.0,3.0,13.0,Benefits: good protein,alzheimer's disease,38.5,0.0,56.2
+Alzheimer's Disease,Apple,Consume,52,0.3,0.2,14.0,2.4,4.6,6.0,Benefits: low calorie,alzheimer's disease,2.3,107.7,3.5
+Alzheimer's Disease,Blueberries,Consume,57,0.7,0.3,14.5,2.4,9.7,6.0,Benefits: low calorie,alzheimer's disease,4.9,101.8,4.7
+Alzheimer's Disease,Spinach,Consume,23,2.9,0.4,3.6,2.2,28.1,99.0,"Benefits: low calorie, rich in vitamin C",alzheimer's disease,50.4,62.6,15.7
+Alzheimer's Disease,Fried Food,Avoid,450,5.0,30.0,40.0,1.0,0.0,10.0,"Concerns: high calorie, high fat",alzheimer's disease,4.4,35.6,60.0
+Alzheimer's Disease,Ice Cream,Avoid,207,3.5,11.0,24.0,0.5,0.5,128.0,Concerns: not recommended for this condition,alzheimer's disease,6.8,46.4,47.8
+Alzheimer's Disease,High Salt Snacks,Avoid,480,6.0,22.0,65.0,2.0,0.0,20.0,"Concerns: high calorie, high fat",alzheimer's disease,5.0,54.2,41.2
+Alzheimer's Disease,Candy,Avoid,400,0.0,5.0,93.0,0.0,0.0,5.0,"Concerns: high calorie, high refined carbs, no fiber",alzheimer's disease,0.0,93.0,11.2
+Alzheimer's Disease,Full-fat Cheese,Avoid,402,25.0,33.0,1.3,0.0,0.0,721.0,"Concerns: high calorie, high fat, no fiber",alzheimer's disease,24.9,1.3,73.9
+Parkinson's Disease,Apple,Consume,52,0.3,0.2,14.0,2.4,4.6,6.0,Benefits: low calorie,parkinson's disease,2.3,107.7,3.5
+Parkinson's Disease,Oats,Consume,389,16.9,6.9,66.3,10.6,0.0,54.0,"Benefits: high fiber, good protein",parkinson's disease,17.4,68.2,16.0
+Parkinson's Disease,Spinach,Consume,23,2.9,0.4,3.6,2.2,28.1,99.0,"Benefits: low calorie, rich in vitamin C",parkinson's disease,50.4,62.6,15.7
+Parkinson's Disease,Quinoa,Consume,120,4.4,1.9,21.3,2.8,0.0,17.0,Benefits: nutritional support,parkinson's disease,14.7,71.0,14.2
+Parkinson's Disease,Blueberries,Consume,57,0.7,0.3,14.5,2.4,9.7,6.0,Benefits: low calorie,parkinson's disease,4.9,101.8,4.7
+Parkinson's Disease,White Bread,Avoid,265,9.0,3.2,49.0,2.7,0.0,260.0,Concerns: not recommended for this condition,parkinson's disease,13.6,74.0,10.9
+Parkinson's Disease,Chips,Avoid,536,7.0,35.0,53.0,5.0,0.0,20.0,"Concerns: high calorie, high fat",parkinson's disease,5.2,39.6,58.8
+Parkinson's Disease,Red Meat,Avoid,250,26.0,15.0,0.0,0.0,0.0,18.0,Concerns: no fiber,parkinson's disease,41.6,0.0,54.0
+Parkinson's Disease,Fried Food,Avoid,450,5.0,30.0,40.0,1.0,0.0,10.0,"Concerns: high calorie, high fat",parkinson's disease,4.4,35.6,60.0
+Parkinson's Disease,Pastries,Avoid,406,6.0,21.0,51.0,1.5,0.0,20.0,"Concerns: high calorie, high fat, high refined carbs",parkinson's disease,5.9,50.2,46.6
+Stroke,Green Tea,Consume,2,0.2,0.0,0.5,0.0,0.0,1.0,Benefits: low calorie,stroke,40.0,100.0,0.0
+Stroke,Carrots,Consume,41,0.9,0.2,9.6,2.8,5.9,33.0,Benefits: low calorie,stroke,8.8,93.7,4.4
+Stroke,Oats,Consume,389,16.9,6.9,66.3,10.6,0.0,54.0,"Benefits: high fiber, good protein",stroke,17.4,68.2,16.0
+Stroke,Broccoli,Consume,34,2.8,0.4,7.0,2.6,89.2,47.0,"Benefits: low calorie, rich in vitamin C",stroke,32.9,82.4,10.6
+Stroke,Oats,Consume,389,16.9,6.9,66.3,10.6,0.0,54.0,"Benefits: high fiber, good protein",stroke,17.4,68.2,16.0
+Stroke,Ice Cream,Avoid,207,3.5,11.0,24.0,0.5,0.5,128.0,Concerns: not recommended for this condition,stroke,6.8,46.4,47.8
+Stroke,Ice Cream,Avoid,207,3.5,11.0,24.0,0.5,0.5,128.0,Concerns: not recommended for this condition,stroke,6.8,46.4,47.8
+Stroke,Ice Cream,Avoid,207,3.5,11.0,24.0,0.5,0.5,128.0,Concerns: not recommended for this condition,stroke,6.8,46.4,47.8
+Stroke,Refined Flour Products,Avoid,364,10.0,1.0,76.0,2.7,0.0,15.0,Concerns: high calorie,stroke,11.0,83.5,2.5
+Stroke,Soda,Avoid,41,0.0,0.0,10.6,0.0,0.0,0.0,Concerns: no fiber,stroke,0.0,103.4,0.0
+High Cholesterol,Garlic,Consume,149,6.4,0.5,33.1,2.1,31.2,181.0,"Benefits: good protein, rich in vitamin C, calcium source","cholesterol, high cholesterol, ldl, hdl, lipids",17.2,88.9,3.0
+High Cholesterol,Greek Yogurt,Consume,59,10.2,0.4,3.6,0.0,0.5,111.0,"Benefits: good protein, low calorie, calcium source","cholesterol, high cholesterol, ldl, hdl, lipids",69.2,24.4,6.1
+High Cholesterol,Greek Yogurt,Consume,59,10.2,0.4,3.6,0.0,0.5,111.0,"Benefits: good protein, low calorie, calcium source","cholesterol, high cholesterol, ldl, hdl, lipids",69.2,24.4,6.1
+High Cholesterol,Carrots,Consume,41,0.9,0.2,9.6,2.8,5.9,33.0,Benefits: low calorie,"cholesterol, high cholesterol, ldl, hdl, lipids",8.8,93.7,4.4
+High Cholesterol,Brown Rice,Consume,112,2.6,0.9,23.5,1.8,0.0,10.0,Benefits: nutritional support,"cholesterol, high cholesterol, ldl, hdl, lipids",9.3,83.9,7.2
+High Cholesterol,Soda,Avoid,41,0.0,0.0,10.6,0.0,0.0,0.0,Concerns: no fiber,"cholesterol, high cholesterol, ldl, hdl, lipids",0.0,103.4,0.0
+High Cholesterol,White Bread,Avoid,265,9.0,3.2,49.0,2.7,0.0,260.0,Concerns: not recommended for this condition,"cholesterol, high cholesterol, ldl, hdl, lipids",13.6,74.0,10.9
+High Cholesterol,Candy,Avoid,400,0.0,5.0,93.0,0.0,0.0,5.0,"Concerns: high calorie, high refined carbs, no fiber","cholesterol, high cholesterol, ldl, hdl, lipids",0.0,93.0,11.2
+High Cholesterol,High Salt Snacks,Avoid,480,6.0,22.0,65.0,2.0,0.0,20.0,"Concerns: high calorie, high fat","cholesterol, high cholesterol, ldl, hdl, lipids",5.0,54.2,41.2
+High Cholesterol,Pastries,Avoid,406,6.0,21.0,51.0,1.5,0.0,20.0,"Concerns: high calorie, high fat, high refined carbs","cholesterol, high cholesterol, ldl, hdl, lipids",5.9,50.2,46.6
+Celiac Disease,Apple,Consume,52,0.3,0.2,14.0,2.4,4.6,6.0,Benefits: low calorie,celiac disease,2.3,107.7,3.5
+Celiac Disease,Greek Yogurt,Consume,59,10.2,0.4,3.6,0.0,0.5,111.0,"Benefits: good protein, low calorie, calcium source",celiac disease,69.2,24.4,6.1
+Celiac Disease,Salmon,Consume,208,20.0,13.0,0.0,0.0,3.0,13.0,Benefits: good protein,celiac disease,38.5,0.0,56.2
+Celiac Disease,Greek Yogurt,Consume,59,10.2,0.4,3.6,0.0,0.5,111.0,"Benefits: good protein, low calorie, calcium source",celiac disease,69.2,24.4,6.1
+Celiac Disease,Spinach,Consume,23,2.9,0.4,3.6,2.2,28.1,99.0,"Benefits: low calorie, rich in vitamin C",celiac disease,50.4,62.6,15.7
+Celiac Disease,Red Meat,Avoid,250,26.0,15.0,0.0,0.0,0.0,18.0,Concerns: no fiber,celiac disease,41.6,0.0,54.0
+Celiac Disease,Butter,Avoid,717,0.9,81.1,0.1,0.0,0.0,24.0,"Concerns: high calorie, high fat, no fiber",celiac disease,0.5,0.1,101.8
+Celiac Disease,Candy,Avoid,400,0.0,5.0,93.0,0.0,0.0,5.0,"Concerns: high calorie, high refined carbs, no fiber",celiac disease,0.0,93.0,11.2
+Celiac Disease,High Salt Snacks,Avoid,480,6.0,22.0,65.0,2.0,0.0,20.0,"Concerns: high calorie, high fat",celiac disease,5.0,54.2,41.2
+Celiac Disease,Pastries,Avoid,406,6.0,21.0,51.0,1.5,0.0,20.0,"Concerns: high calorie, high fat, high refined carbs",celiac disease,5.9,50.2,46.6
+Liver Disease,Broccoli,Consume,34,2.8,0.4,7.0,2.6,89.2,47.0,"Benefits: low calorie, rich in vitamin C",liver disease,32.9,82.4,10.6
+Liver Disease,Blueberries,Consume,57,0.7,0.3,14.5,2.4,9.7,6.0,Benefits: low calorie,liver disease,4.9,101.8,4.7
+Liver Disease,Beans,Consume,127,8.7,0.5,22.8,6.4,1.2,50.0,"Benefits: high fiber, good protein",liver disease,27.4,71.8,3.5
+Liver Disease,Spinach,Consume,23,2.9,0.4,3.6,2.2,28.1,99.0,"Benefits: low calorie, rich in vitamin C",liver disease,50.4,62.6,15.7
+Liver Disease,Walnuts,Consume,654,15.2,65.2,13.7,6.7,1.3,98.0,"Benefits: high fiber, good protein",liver disease,9.3,8.4,89.7
+Liver Disease,Ice Cream,Avoid,207,3.5,11.0,24.0,0.5,0.5,128.0,Concerns: not recommended for this condition,liver disease,6.8,46.4,47.8
+Liver Disease,Sugary Drinks,Avoid,45,0.0,0.0,11.0,0.0,0.0,0.0,Concerns: no fiber,liver disease,0.0,97.8,0.0
+Liver Disease,Pastries,Avoid,406,6.0,21.0,51.0,1.5,0.0,20.0,"Concerns: high calorie, high fat, high refined carbs",liver disease,5.9,50.2,46.6
+Liver Disease,Red Meat,Avoid,250,26.0,15.0,0.0,0.0,0.0,18.0,Concerns: no fiber,liver disease,41.6,0.0,54.0
+Liver Disease,High Salt Snacks,Avoid,480,6.0,22.0,65.0,2.0,0.0,20.0,"Concerns: high calorie, high fat",liver disease,5.0,54.2,41.2
+Gout,Almonds,Consume,579,21.2,49.9,21.6,12.5,0.0,264.0,"Benefits: high fiber, good protein, calcium source",gout,14.6,14.9,77.6
+Gout,Garlic,Consume,149,6.4,0.5,33.1,2.1,31.2,181.0,"Benefits: good protein, rich in vitamin C, calcium source",gout,17.2,88.9,3.0
+Gout,Blueberries,Consume,57,0.7,0.3,14.5,2.4,9.7,6.0,Benefits: low calorie,gout,4.9,101.8,4.7
+Gout,Chia Seeds,Consume,486,16.5,30.7,42.1,34.4,1.6,631.0,"Benefits: high fiber, good protein, calcium source",gout,13.6,34.7,56.9
+Gout,Apple,Consume,52,0.3,0.2,14.0,2.4,4.6,6.0,Benefits: low calorie,gout,2.3,107.7,3.5
+Gout,Candy,Avoid,400,0.0,5.0,93.0,0.0,0.0,5.0,"Concerns: high calorie, high refined carbs, no fiber",gout,0.0,93.0,11.2
+Gout,High Salt Snacks,Avoid,480,6.0,22.0,65.0,2.0,0.0,20.0,"Concerns: high calorie, high fat",gout,5.0,54.2,41.2
+Gout,Red Meat,Avoid,250,26.0,15.0,0.0,0.0,0.0,18.0,Concerns: no fiber,gout,41.6,0.0,54.0
+Gout,High Salt Snacks,Avoid,480,6.0,22.0,65.0,2.0,0.0,20.0,"Concerns: high calorie, high fat",gout,5.0,54.2,41.2
+Gout,Soda,Avoid,41,0.0,0.0,10.6,0.0,0.0,0.0,Concerns: no fiber,gout,0.0,103.4,0.0
+Rheumatoid Arthritis,Apple,Consume,52,0.3,0.2,14.0,2.4,4.6,6.0,Benefits: low calorie,rheumatoid arthritis,2.3,107.7,3.5
+Rheumatoid Arthritis,Almonds,Consume,579,21.2,49.9,21.6,12.5,0.0,264.0,"Benefits: high fiber, good protein, calcium source",rheumatoid arthritis,14.6,14.9,77.6
+Rheumatoid Arthritis,Salmon,Consume,208,20.0,13.0,0.0,0.0,3.0,13.0,Benefits: good protein,rheumatoid arthritis,38.5,0.0,56.2
+Rheumatoid Arthritis,Chia Seeds,Consume,486,16.5,30.7,42.1,34.4,1.6,631.0,"Benefits: high fiber, good protein, calcium source",rheumatoid arthritis,13.6,34.7,56.9
+Rheumatoid Arthritis,Carrots,Consume,41,0.9,0.2,9.6,2.8,5.9,33.0,Benefits: low calorie,rheumatoid arthritis,8.8,93.7,4.4
+Rheumatoid Arthritis,Chips,Avoid,536,7.0,35.0,53.0,5.0,0.0,20.0,"Concerns: high calorie, high fat",rheumatoid arthritis,5.2,39.6,58.8
+Rheumatoid Arthritis,Processed Meat,Avoid,290,14.0,25.0,3.0,0.0,0.0,10.0,"Concerns: high fat, no fiber",rheumatoid arthritis,19.3,4.1,77.6
+Rheumatoid Arthritis,Processed Meat,Avoid,290,14.0,25.0,3.0,0.0,0.0,10.0,"Concerns: high fat, no fiber",rheumatoid arthritis,19.3,4.1,77.6
+Rheumatoid Arthritis,Soda,Avoid,41,0.0,0.0,10.6,0.0,0.0,0.0,Concerns: no fiber,rheumatoid arthritis,0.0,103.4,0.0
+Rheumatoid Arthritis,Soda,Avoid,41,0.0,0.0,10.6,0.0,0.0,0.0,Concerns: no fiber,rheumatoid arthritis,0.0,103.4,0.0
+Depression,Chia Seeds,Consume,486,16.5,30.7,42.1,34.4,1.6,631.0,"Benefits: high fiber, good protein, calcium source",depression,13.6,34.7,56.9
+Depression,Tomatoes,Consume,18,0.9,0.2,3.9,1.2,14.0,10.0,"Benefits: low calorie, rich in vitamin C",depression,20.0,86.7,10.0
+Depression,Broccoli,Consume,34,2.8,0.4,7.0,2.6,89.2,47.0,"Benefits: low calorie, rich in vitamin C",depression,32.9,82.4,10.6
+Depression,Walnuts,Consume,654,15.2,65.2,13.7,6.7,1.3,98.0,"Benefits: high fiber, good protein",depression,9.3,8.4,89.7
+Depression,Beans,Consume,127,8.7,0.5,22.8,6.4,1.2,50.0,"Benefits: high fiber, good protein",depression,27.4,71.8,3.5
+Depression,Alcohol,Avoid,220,0.0,0.0,20.0,0.0,0.0,0.0,Concerns: no fiber,depression,0.0,36.4,0.0
+Depression,Butter,Avoid,717,0.9,81.1,0.1,0.0,0.0,24.0,"Concerns: high calorie, high fat, no fiber",depression,0.5,0.1,101.8
+Depression,Ice Cream,Avoid,207,3.5,11.0,24.0,0.5,0.5,128.0,Concerns: not recommended for this condition,depression,6.8,46.4,47.8
+Depression,Soda,Avoid,41,0.0,0.0,10.6,0.0,0.0,0.0,Concerns: no fiber,depression,0.0,103.4,0.0
+Depression,Soda,Avoid,41,0.0,0.0,10.6,0.0,0.0,0.0,Concerns: no fiber,depression,0.0,103.4,0.0
+Anxiety,Chia Seeds,Consume,486,16.5,30.7,42.1,34.4,1.6,631.0,"Benefits: high fiber, good protein, calcium source",anxiety,13.6,34.7,56.9
+Anxiety,Brown Rice,Consume,112,2.6,0.9,23.5,1.8,0.0,10.0,Benefits: nutritional support,anxiety,9.3,83.9,7.2
+Anxiety,Quinoa,Consume,120,4.4,1.9,21.3,2.8,0.0,17.0,Benefits: nutritional support,anxiety,14.7,71.0,14.2
+Anxiety,Almonds,Consume,579,21.2,49.9,21.6,12.5,0.0,264.0,"Benefits: high fiber, good protein, calcium source",anxiety,14.6,14.9,77.6
+Anxiety,Quinoa,Consume,120,4.4,1.9,21.3,2.8,0.0,17.0,Benefits: nutritional support,anxiety,14.7,71.0,14.2
+Anxiety,Ice Cream,Avoid,207,3.5,11.0,24.0,0.5,0.5,128.0,Concerns: not recommended for this condition,anxiety,6.8,46.4,47.8
+Anxiety,Soda,Avoid,41,0.0,0.0,10.6,0.0,0.0,0.0,Concerns: no fiber,anxiety,0.0,103.4,0.0
+Anxiety,Chips,Avoid,536,7.0,35.0,53.0,5.0,0.0,20.0,"Concerns: high calorie, high fat",anxiety,5.2,39.6,58.8
+Anxiety,Red Meat,Avoid,250,26.0,15.0,0.0,0.0,0.0,18.0,Concerns: no fiber,anxiety,41.6,0.0,54.0
+Anxiety,Alcohol,Avoid,220,0.0,0.0,20.0,0.0,0.0,0.0,Concerns: no fiber,anxiety,0.0,36.4,0.0
+Migraine,Spinach,Consume,23,2.9,0.4,3.6,2.2,28.1,99.0,"Benefits: low calorie, rich in vitamin C",migraine,50.4,62.6,15.7
+Migraine,Sweet Potato,Consume,86,1.6,0.1,20.1,3.0,2.4,30.0,"Benefits: high fiber, low calorie",migraine,7.4,93.5,1.0
+Migraine,Salmon,Consume,208,20.0,13.0,0.0,0.0,3.0,13.0,Benefits: good protein,migraine,38.5,0.0,56.2
+Migraine,Salmon,Consume,208,20.0,13.0,0.0,0.0,3.0,13.0,Benefits: good protein,migraine,38.5,0.0,56.2
+Migraine,Salmon,Consume,208,20.0,13.0,0.0,0.0,3.0,13.0,Benefits: good protein,migraine,38.5,0.0,56.2
+Migraine,Full-fat Cheese,Avoid,402,25.0,33.0,1.3,0.0,0.0,721.0,"Concerns: high calorie, high fat, no fiber",migraine,24.9,1.3,73.9
+Migraine,Alcohol,Avoid,220,0.0,0.0,20.0,0.0,0.0,0.0,Concerns: no fiber,migraine,0.0,36.4,0.0
+Migraine,Alcohol,Avoid,220,0.0,0.0,20.0,0.0,0.0,0.0,Concerns: no fiber,migraine,0.0,36.4,0.0
+Migraine,Alcohol,Avoid,220,0.0,0.0,20.0,0.0,0.0,0.0,Concerns: no fiber,migraine,0.0,36.4,0.0
+Migraine,Candy,Avoid,400,0.0,5.0,93.0,0.0,0.0,5.0,"Concerns: high calorie, high refined carbs, no fiber",migraine,0.0,93.0,11.2
+Epilepsy,Brown Rice,Consume,112,2.6,0.9,23.5,1.8,0.0,10.0,Benefits: nutritional support,epilepsy,9.3,83.9,7.2
+Epilepsy,Carrots,Consume,41,0.9,0.2,9.6,2.8,5.9,33.0,Benefits: low calorie,epilepsy,8.8,93.7,4.4
+Epilepsy,Quinoa,Consume,120,4.4,1.9,21.3,2.8,0.0,17.0,Benefits: nutritional support,epilepsy,14.7,71.0,14.2
+Epilepsy,Beans,Consume,127,8.7,0.5,22.8,6.4,1.2,50.0,"Benefits: high fiber, good protein",epilepsy,27.4,71.8,3.5
+Epilepsy,Carrots,Consume,41,0.9,0.2,9.6,2.8,5.9,33.0,Benefits: low calorie,epilepsy,8.8,93.7,4.4
+Epilepsy,Pastries,Avoid,406,6.0,21.0,51.0,1.5,0.0,20.0,"Concerns: high calorie, high fat, high refined carbs",epilepsy,5.9,50.2,46.6
+Epilepsy,Red Meat,Avoid,250,26.0,15.0,0.0,0.0,0.0,18.0,Concerns: no fiber,epilepsy,41.6,0.0,54.0
+Epilepsy,Chips,Avoid,536,7.0,35.0,53.0,5.0,0.0,20.0,"Concerns: high calorie, high fat",epilepsy,5.2,39.6,58.8
+Epilepsy,Chips,Avoid,536,7.0,35.0,53.0,5.0,0.0,20.0,"Concerns: high calorie, high fat",epilepsy,5.2,39.6,58.8
+Epilepsy,Alcohol,Avoid,220,0.0,0.0,20.0,0.0,0.0,0.0,Concerns: no fiber,epilepsy,0.0,36.4,0.0
+COPD,Blueberries,Consume,57,0.7,0.3,14.5,2.4,9.7,6.0,Benefits: low calorie,copd,4.9,101.8,4.7
+COPD,Tomatoes,Consume,18,0.9,0.2,3.9,1.2,14.0,10.0,"Benefits: low calorie, rich in vitamin C",copd,20.0,86.7,10.0
+COPD,Greek Yogurt,Consume,59,10.2,0.4,3.6,0.0,0.5,111.0,"Benefits: good protein, low calorie, calcium source",copd,69.2,24.4,6.1
+COPD,Salmon,Consume,208,20.0,13.0,0.0,0.0,3.0,13.0,Benefits: good protein,copd,38.5,0.0,56.2
+COPD,Broccoli,Consume,34,2.8,0.4,7.0,2.6,89.2,47.0,"Benefits: low calorie, rich in vitamin C",copd,32.9,82.4,10.6
+COPD,Red Meat,Avoid,250,26.0,15.0,0.0,0.0,0.0,18.0,Concerns: no fiber,copd,41.6,0.0,54.0
+COPD,Sugary Drinks,Avoid,45,0.0,0.0,11.0,0.0,0.0,0.0,Concerns: no fiber,copd,0.0,97.8,0.0
+COPD,Candy,Avoid,400,0.0,5.0,93.0,0.0,0.0,5.0,"Concerns: high calorie, high refined carbs, no fiber",copd,0.0,93.0,11.2
+COPD,Fried Food,Avoid,450,5.0,30.0,40.0,1.0,0.0,10.0,"Concerns: high calorie, high fat",copd,4.4,35.6,60.0
+COPD,Butter,Avoid,717,0.9,81.1,0.1,0.0,0.0,24.0,"Concerns: high calorie, high fat, no fiber",copd,0.5,0.1,101.8
+Thyroid Disorder,Oats,Consume,389,16.9,6.9,66.3,10.6,0.0,54.0,"Benefits: high fiber, good protein","thyroid, hypothyroid, hyperthyroid, thyroid disorder",17.4,68.2,16.0
+Thyroid Disorder,Almonds,Consume,579,21.2,49.9,21.6,12.5,0.0,264.0,"Benefits: high fiber, good protein, calcium source","thyroid, hypothyroid, hyperthyroid, thyroid disorder",14.6,14.9,77.6
+Thyroid Disorder,Quinoa,Consume,120,4.4,1.9,21.3,2.8,0.0,17.0,Benefits: nutritional support,"thyroid, hypothyroid, hyperthyroid, thyroid disorder",14.7,71.0,14.2
+Thyroid Disorder,Garlic,Consume,149,6.4,0.5,33.1,2.1,31.2,181.0,"Benefits: good protein, rich in vitamin C, calcium source","thyroid, hypothyroid, hyperthyroid, thyroid disorder",17.2,88.9,3.0
+Thyroid Disorder,Green Tea,Consume,2,0.2,0.0,0.5,0.0,0.0,1.0,Benefits: low calorie,"thyroid, hypothyroid, hyperthyroid, thyroid disorder",40.0,100.0,0.0
+Thyroid Disorder,Sugary Drinks,Avoid,45,0.0,0.0,11.0,0.0,0.0,0.0,Concerns: no fiber,"thyroid, hypothyroid, hyperthyroid, thyroid disorder",0.0,97.8,0.0
+Thyroid Disorder,Candy,Avoid,400,0.0,5.0,93.0,0.0,0.0,5.0,"Concerns: high calorie, high refined carbs, no fiber","thyroid, hypothyroid, hyperthyroid, thyroid disorder",0.0,93.0,11.2
+Thyroid Disorder,Full-fat Cheese,Avoid,402,25.0,33.0,1.3,0.0,0.0,721.0,"Concerns: high calorie, high fat, no fiber","thyroid, hypothyroid, hyperthyroid, thyroid disorder",24.9,1.3,73.9
+Thyroid Disorder,Processed Meat,Avoid,290,14.0,25.0,3.0,0.0,0.0,10.0,"Concerns: high fat, no fiber","thyroid, hypothyroid, hyperthyroid, thyroid disorder",19.3,4.1,77.6
+Thyroid Disorder,Ice Cream,Avoid,207,3.5,11.0,24.0,0.5,0.5,128.0,Concerns: not recommended for this condition,"thyroid, hypothyroid, hyperthyroid, thyroid disorder",6.8,46.4,47.8
+Influenza,Carrots,Consume,41,0.9,0.2,9.6,2.8,5.9,33.0,Benefits: low calorie,influenza,8.8,93.7,4.4
+Influenza,Garlic,Consume,149,6.4,0.5,33.1,2.1,31.2,181.0,"Benefits: good protein, rich in vitamin C, calcium source",influenza,17.2,88.9,3.0
+Influenza,Broccoli,Consume,34,2.8,0.4,7.0,2.6,89.2,47.0,"Benefits: low calorie, rich in vitamin C",influenza,32.9,82.4,10.6
+Influenza,Beans,Consume,127,8.7,0.5,22.8,6.4,1.2,50.0,"Benefits: high fiber, good protein",influenza,27.4,71.8,3.5
+Influenza,Tomatoes,Consume,18,0.9,0.2,3.9,1.2,14.0,10.0,"Benefits: low calorie, rich in vitamin C",influenza,20.0,86.7,10.0
+Influenza,Candy,Avoid,400,0.0,5.0,93.0,0.0,0.0,5.0,"Concerns: high calorie, high refined carbs, no fiber",influenza,0.0,93.0,11.2
+Influenza,Ice Cream,Avoid,207,3.5,11.0,24.0,0.5,0.5,128.0,Concerns: not recommended for this condition,influenza,6.8,46.4,47.8
+Influenza,Processed Meat,Avoid,290,14.0,25.0,3.0,0.0,0.0,10.0,"Concerns: high fat, no fiber",influenza,19.3,4.1,77.6
+Influenza,Candy,Avoid,400,0.0,5.0,93.0,0.0,0.0,5.0,"Concerns: high calorie, high refined carbs, no fiber",influenza,0.0,93.0,11.2
+Influenza,Candy,Avoid,400,0.0,5.0,93.0,0.0,0.0,5.0,"Concerns: high calorie, high refined carbs, no fiber",influenza,0.0,93.0,11.2
+Pneumonia,Greek Yogurt,Consume,59,10.2,0.4,3.6,0.0,0.5,111.0,"Benefits: good protein, low calorie, calcium source",pneumonia,69.2,24.4,6.1
+Pneumonia,Apple,Consume,52,0.3,0.2,14.0,2.4,4.6,6.0,Benefits: low calorie,pneumonia,2.3,107.7,3.5
+Pneumonia,Green Tea,Consume,2,0.2,0.0,0.5,0.0,0.0,1.0,Benefits: low calorie,pneumonia,40.0,100.0,0.0
+Pneumonia,Salmon,Consume,208,20.0,13.0,0.0,0.0,3.0,13.0,Benefits: good protein,pneumonia,38.5,0.0,56.2
+Pneumonia,Beans,Consume,127,8.7,0.5,22.8,6.4,1.2,50.0,"Benefits: high fiber, good protein",pneumonia,27.4,71.8,3.5
+Pneumonia,High Salt Snacks,Avoid,480,6.0,22.0,65.0,2.0,0.0,20.0,"Concerns: high calorie, high fat",pneumonia,5.0,54.2,41.2
+Pneumonia,Butter,Avoid,717,0.9,81.1,0.1,0.0,0.0,24.0,"Concerns: high calorie, high fat, no fiber",pneumonia,0.5,0.1,101.8
+Pneumonia,Refined Flour Products,Avoid,364,10.0,1.0,76.0,2.7,0.0,15.0,Concerns: high calorie,pneumonia,11.0,83.5,2.5
+Pneumonia,Fried Food,Avoid,450,5.0,30.0,40.0,1.0,0.0,10.0,"Concerns: high calorie, high fat",pneumonia,4.4,35.6,60.0
+Pneumonia,Sugary Drinks,Avoid,45,0.0,0.0,11.0,0.0,0.0,0.0,Concerns: no fiber,pneumonia,0.0,97.8,0.0
+Tuberculosis,Greek Yogurt,Consume,59,10.2,0.4,3.6,0.0,0.5,111.0,"Benefits: good protein, low calorie, calcium source",tuberculosis,69.2,24.4,6.1
+Tuberculosis,Oats,Consume,389,16.9,6.9,66.3,10.6,0.0,54.0,"Benefits: high fiber, good protein",tuberculosis,17.4,68.2,16.0
+Tuberculosis,Green Tea,Consume,2,0.2,0.0,0.5,0.0,0.0,1.0,Benefits: low calorie,tuberculosis,40.0,100.0,0.0
+Tuberculosis,Salmon,Consume,208,20.0,13.0,0.0,0.0,3.0,13.0,Benefits: good protein,tuberculosis,38.5,0.0,56.2
+Tuberculosis,Chia Seeds,Consume,486,16.5,30.7,42.1,34.4,1.6,631.0,"Benefits: high fiber, good protein, calcium source",tuberculosis,13.6,34.7,56.9
+Tuberculosis,Red Meat,Avoid,250,26.0,15.0,0.0,0.0,0.0,18.0,Concerns: no fiber,tuberculosis,41.6,0.0,54.0
+Tuberculosis,Butter,Avoid,717,0.9,81.1,0.1,0.0,0.0,24.0,"Concerns: high calorie, high fat, no fiber",tuberculosis,0.5,0.1,101.8
+Tuberculosis,High Salt Snacks,Avoid,480,6.0,22.0,65.0,2.0,0.0,20.0,"Concerns: high calorie, high fat",tuberculosis,5.0,54.2,41.2
+Tuberculosis,Processed Meat,Avoid,290,14.0,25.0,3.0,0.0,0.0,10.0,"Concerns: high fat, no fiber",tuberculosis,19.3,4.1,77.6
+Tuberculosis,Refined Flour Products,Avoid,364,10.0,1.0,76.0,2.7,0.0,15.0,Concerns: high calorie,tuberculosis,11.0,83.5,2.5
+HIV/AIDS,Tomatoes,Consume,18,0.9,0.2,3.9,1.2,14.0,10.0,"Benefits: low calorie, rich in vitamin C",hiv/aids,20.0,86.7,10.0
+HIV/AIDS,Walnuts,Consume,654,15.2,65.2,13.7,6.7,1.3,98.0,"Benefits: high fiber, good protein",hiv/aids,9.3,8.4,89.7
+HIV/AIDS,Carrots,Consume,41,0.9,0.2,9.6,2.8,5.9,33.0,Benefits: low calorie,hiv/aids,8.8,93.7,4.4
+HIV/AIDS,Blueberries,Consume,57,0.7,0.3,14.5,2.4,9.7,6.0,Benefits: low calorie,hiv/aids,4.9,101.8,4.7
+HIV/AIDS,Apple,Consume,52,0.3,0.2,14.0,2.4,4.6,6.0,Benefits: low calorie,hiv/aids,2.3,107.7,3.5
+HIV/AIDS,Candy,Avoid,400,0.0,5.0,93.0,0.0,0.0,5.0,"Concerns: high calorie, high refined carbs, no fiber",hiv/aids,0.0,93.0,11.2
+HIV/AIDS,Candy,Avoid,400,0.0,5.0,93.0,0.0,0.0,5.0,"Concerns: high calorie, high refined carbs, no fiber",hiv/aids,0.0,93.0,11.2
+HIV/AIDS,Full-fat Cheese,Avoid,402,25.0,33.0,1.3,0.0,0.0,721.0,"Concerns: high calorie, high fat, no fiber",hiv/aids,24.9,1.3,73.9
+HIV/AIDS,Red Meat,Avoid,250,26.0,15.0,0.0,0.0,0.0,18.0,Concerns: no fiber,hiv/aids,41.6,0.0,54.0
+HIV/AIDS,Chips,Avoid,536,7.0,35.0,53.0,5.0,0.0,20.0,"Concerns: high calorie, high fat",hiv/aids,5.2,39.6,58.8
+Malaria,Beans,Consume,127,8.7,0.5,22.8,6.4,1.2,50.0,"Benefits: high fiber, good protein",malaria,27.4,71.8,3.5
+Malaria,Broccoli,Consume,34,2.8,0.4,7.0,2.6,89.2,47.0,"Benefits: low calorie, rich in vitamin C",malaria,32.9,82.4,10.6
+Malaria,Garlic,Consume,149,6.4,0.5,33.1,2.1,31.2,181.0,"Benefits: good protein, rich in vitamin C, calcium source",malaria,17.2,88.9,3.0
+Malaria,Blueberries,Consume,57,0.7,0.3,14.5,2.4,9.7,6.0,Benefits: low calorie,malaria,4.9,101.8,4.7
+Malaria,Brown Rice,Consume,112,2.6,0.9,23.5,1.8,0.0,10.0,Benefits: nutritional support,malaria,9.3,83.9,7.2
+Malaria,Pastries,Avoid,406,6.0,21.0,51.0,1.5,0.0,20.0,"Concerns: high calorie, high fat, high refined carbs",malaria,5.9,50.2,46.6
+Malaria,High Salt Snacks,Avoid,480,6.0,22.0,65.0,2.0,0.0,20.0,"Concerns: high calorie, high fat",malaria,5.0,54.2,41.2
+Malaria,Full-fat Cheese,Avoid,402,25.0,33.0,1.3,0.0,0.0,721.0,"Concerns: high calorie, high fat, no fiber",malaria,24.9,1.3,73.9
+Malaria,Alcohol,Avoid,220,0.0,0.0,20.0,0.0,0.0,0.0,Concerns: no fiber,malaria,0.0,36.4,0.0
+Malaria,Full-fat Cheese,Avoid,402,25.0,33.0,1.3,0.0,0.0,721.0,"Concerns: high calorie, high fat, no fiber",malaria,24.9,1.3,73.9
+Dengue,Green Tea,Consume,2,0.2,0.0,0.5,0.0,0.0,1.0,Benefits: low calorie,dengue,40.0,100.0,0.0
+Dengue,Almonds,Consume,579,21.2,49.9,21.6,12.5,0.0,264.0,"Benefits: high fiber, good protein, calcium source",dengue,14.6,14.9,77.6
+Dengue,Garlic,Consume,149,6.4,0.5,33.1,2.1,31.2,181.0,"Benefits: good protein, rich in vitamin C, calcium source",dengue,17.2,88.9,3.0
+Dengue,Salmon,Consume,208,20.0,13.0,0.0,0.0,3.0,13.0,Benefits: good protein,dengue,38.5,0.0,56.2
+Dengue,Salmon,Consume,208,20.0,13.0,0.0,0.0,3.0,13.0,Benefits: good protein,dengue,38.5,0.0,56.2
+Dengue,Pastries,Avoid,406,6.0,21.0,51.0,1.5,0.0,20.0,"Concerns: high calorie, high fat, high refined carbs",dengue,5.9,50.2,46.6
+Dengue,Ice Cream,Avoid,207,3.5,11.0,24.0,0.5,0.5,128.0,Concerns: not recommended for this condition,dengue,6.8,46.4,47.8
+Dengue,Alcohol,Avoid,220,0.0,0.0,20.0,0.0,0.0,0.0,Concerns: no fiber,dengue,0.0,36.4,0.0
+Dengue,Red Meat,Avoid,250,26.0,15.0,0.0,0.0,0.0,18.0,Concerns: no fiber,dengue,41.6,0.0,54.0
+Dengue,Red Meat,Avoid,250,26.0,15.0,0.0,0.0,0.0,18.0,Concerns: no fiber,dengue,41.6,0.0,54.0
+Arthritis,Garlic,Consume,149,6.4,0.5,33.1,2.1,31.2,181.0,"Benefits: good protein, rich in vitamin C, calcium source",arthritis,17.2,88.9,3.0
+Arthritis,Lentils,Consume,116,9.0,0.4,20.0,7.9,1.5,19.0,"Benefits: high fiber, good protein",arthritis,31.0,69.0,3.1
+Arthritis,Chia Seeds,Consume,486,16.5,30.7,42.1,34.4,1.6,631.0,"Benefits: high fiber, good protein, calcium source",arthritis,13.6,34.7,56.9
+Arthritis,Green Tea,Consume,2,0.2,0.0,0.5,0.0,0.0,1.0,Benefits: low calorie,arthritis,40.0,100.0,0.0
+Arthritis,Beans,Consume,127,8.7,0.5,22.8,6.4,1.2,50.0,"Benefits: high fiber, good protein",arthritis,27.4,71.8,3.5
+Arthritis,Refined Flour Products,Avoid,364,10.0,1.0,76.0,2.7,0.0,15.0,Concerns: high calorie,arthritis,11.0,83.5,2.5
+Arthritis,Soda,Avoid,41,0.0,0.0,10.6,0.0,0.0,0.0,Concerns: no fiber,arthritis,0.0,103.4,0.0
+Arthritis,Full-fat Cheese,Avoid,402,25.0,33.0,1.3,0.0,0.0,721.0,"Concerns: high calorie, high fat, no fiber",arthritis,24.9,1.3,73.9
+Arthritis,Candy,Avoid,400,0.0,5.0,93.0,0.0,0.0,5.0,"Concerns: high calorie, high refined carbs, no fiber",arthritis,0.0,93.0,11.2
+Arthritis,Full-fat Cheese,Avoid,402,25.0,33.0,1.3,0.0,0.0,721.0,"Concerns: high calorie, high fat, no fiber",arthritis,24.9,1.3,73.9
+Psoriasis,Tomatoes,Consume,18,0.9,0.2,3.9,1.2,14.0,10.0,"Benefits: low calorie, rich in vitamin C",psoriasis,20.0,86.7,10.0
+Psoriasis,Lentils,Consume,116,9.0,0.4,20.0,7.9,1.5,19.0,"Benefits: high fiber, good protein",psoriasis,31.0,69.0,3.1
+Psoriasis,Tomatoes,Consume,18,0.9,0.2,3.9,1.2,14.0,10.0,"Benefits: low calorie, rich in vitamin C",psoriasis,20.0,86.7,10.0
+Psoriasis,Salmon,Consume,208,20.0,13.0,0.0,0.0,3.0,13.0,Benefits: good protein,psoriasis,38.5,0.0,56.2
+Psoriasis,Carrots,Consume,41,0.9,0.2,9.6,2.8,5.9,33.0,Benefits: low calorie,psoriasis,8.8,93.7,4.4
+Psoriasis,Ice Cream,Avoid,207,3.5,11.0,24.0,0.5,0.5,128.0,Concerns: not recommended for this condition,psoriasis,6.8,46.4,47.8
+Psoriasis,Red Meat,Avoid,250,26.0,15.0,0.0,0.0,0.0,18.0,Concerns: no fiber,psoriasis,41.6,0.0,54.0
+Psoriasis,Ice Cream,Avoid,207,3.5,11.0,24.0,0.5,0.5,128.0,Concerns: not recommended for this condition,psoriasis,6.8,46.4,47.8
+Psoriasis,Butter,Avoid,717,0.9,81.1,0.1,0.0,0.0,24.0,"Concerns: high calorie, high fat, no fiber",psoriasis,0.5,0.1,101.8
+Psoriasis,Refined Flour Products,Avoid,364,10.0,1.0,76.0,2.7,0.0,15.0,Concerns: high calorie,psoriasis,11.0,83.5,2.5
+IBS,Quinoa,Consume,120,4.4,1.9,21.3,2.8,0.0,17.0,Benefits: nutritional support,ibs,14.7,71.0,14.2
+IBS,Tomatoes,Consume,18,0.9,0.2,3.9,1.2,14.0,10.0,"Benefits: low calorie, rich in vitamin C",ibs,20.0,86.7,10.0
+IBS,Blueberries,Consume,57,0.7,0.3,14.5,2.4,9.7,6.0,Benefits: low calorie,ibs,4.9,101.8,4.7
+IBS,Green Tea,Consume,2,0.2,0.0,0.5,0.0,0.0,1.0,Benefits: low calorie,ibs,40.0,100.0,0.0
+IBS,Chia Seeds,Consume,486,16.5,30.7,42.1,34.4,1.6,631.0,"Benefits: high fiber, good protein, calcium source",ibs,13.6,34.7,56.9
+IBS,High Salt Snacks,Avoid,480,6.0,22.0,65.0,2.0,0.0,20.0,"Concerns: high calorie, high fat",ibs,5.0,54.2,41.2
+IBS,Alcohol,Avoid,220,0.0,0.0,20.0,0.0,0.0,0.0,Concerns: no fiber,ibs,0.0,36.4,0.0
+IBS,High Salt Snacks,Avoid,480,6.0,22.0,65.0,2.0,0.0,20.0,"Concerns: high calorie, high fat",ibs,5.0,54.2,41.2
+IBS,Soda,Avoid,41,0.0,0.0,10.6,0.0,0.0,0.0,Concerns: no fiber,ibs,0.0,103.4,0.0
+IBS,Soda,Avoid,41,0.0,0.0,10.6,0.0,0.0,0.0,Concerns: no fiber,ibs,0.0,103.4,0.0
+Ulcerative Colitis,Greek Yogurt,Consume,59,10.2,0.4,3.6,0.0,0.5,111.0,"Benefits: good protein, low calorie, calcium source",ulcerative colitis,69.2,24.4,6.1
+Ulcerative Colitis,Tomatoes,Consume,18,0.9,0.2,3.9,1.2,14.0,10.0,"Benefits: low calorie, rich in vitamin C",ulcerative colitis,20.0,86.7,10.0
+Ulcerative Colitis,Apple,Consume,52,0.3,0.2,14.0,2.4,4.6,6.0,Benefits: low calorie,ulcerative colitis,2.3,107.7,3.5
+Ulcerative Colitis,Salmon,Consume,208,20.0,13.0,0.0,0.0,3.0,13.0,Benefits: good protein,ulcerative colitis,38.5,0.0,56.2
+Ulcerative Colitis,Broccoli,Consume,34,2.8,0.4,7.0,2.6,89.2,47.0,"Benefits: low calorie, rich in vitamin C",ulcerative colitis,32.9,82.4,10.6
+Ulcerative Colitis,Ice Cream,Avoid,207,3.5,11.0,24.0,0.5,0.5,128.0,Concerns: not recommended for this condition,ulcerative colitis,6.8,46.4,47.8
+Ulcerative Colitis,Refined Flour Products,Avoid,364,10.0,1.0,76.0,2.7,0.0,15.0,Concerns: high calorie,ulcerative colitis,11.0,83.5,2.5
+Ulcerative Colitis,High Salt Snacks,Avoid,480,6.0,22.0,65.0,2.0,0.0,20.0,"Concerns: high calorie, high fat",ulcerative colitis,5.0,54.2,41.2
+Ulcerative Colitis,High Salt Snacks,Avoid,480,6.0,22.0,65.0,2.0,0.0,20.0,"Concerns: high calorie, high fat",ulcerative colitis,5.0,54.2,41.2
+Ulcerative Colitis,Fried Food,Avoid,450,5.0,30.0,40.0,1.0,0.0,10.0,"Concerns: high calorie, high fat",ulcerative colitis,4.4,35.6,60.0
+Crohn's Disease,Broccoli,Consume,34,2.8,0.4,7.0,2.6,89.2,47.0,"Benefits: low calorie, rich in vitamin C",crohn's disease,32.9,82.4,10.6
+Crohn's Disease,Apple,Consume,52,0.3,0.2,14.0,2.4,4.6,6.0,Benefits: low calorie,crohn's disease,2.3,107.7,3.5
+Crohn's Disease,Almonds,Consume,579,21.2,49.9,21.6,12.5,0.0,264.0,"Benefits: high fiber, good protein, calcium source",crohn's disease,14.6,14.9,77.6
+Crohn's Disease,Almonds,Consume,579,21.2,49.9,21.6,12.5,0.0,264.0,"Benefits: high fiber, good protein, calcium source",crohn's disease,14.6,14.9,77.6
+Crohn's Disease,Brown Rice,Consume,112,2.6,0.9,23.5,1.8,0.0,10.0,Benefits: nutritional support,crohn's disease,9.3,83.9,7.2
+Crohn's Disease,Soda,Avoid,41,0.0,0.0,10.6,0.0,0.0,0.0,Concerns: no fiber,crohn's disease,0.0,103.4,0.0
+Crohn's Disease,Chips,Avoid,536,7.0,35.0,53.0,5.0,0.0,20.0,"Concerns: high calorie, high fat",crohn's disease,5.2,39.6,58.8
+Crohn's Disease,Fried Food,Avoid,450,5.0,30.0,40.0,1.0,0.0,10.0,"Concerns: high calorie, high fat",crohn's disease,4.4,35.6,60.0
+Crohn's Disease,Red Meat,Avoid,250,26.0,15.0,0.0,0.0,0.0,18.0,Concerns: no fiber,crohn's disease,41.6,0.0,54.0
+Crohn's Disease,Butter,Avoid,717,0.9,81.1,0.1,0.0,0.0,24.0,"Concerns: high calorie, high fat, no fiber",crohn's disease,0.5,0.1,101.8
+Endometriosis,Apple,Consume,52,0.3,0.2,14.0,2.4,4.6,6.0,Benefits: low calorie,endometriosis,2.3,107.7,3.5
+Endometriosis,Greek Yogurt,Consume,59,10.2,0.4,3.6,0.0,0.5,111.0,"Benefits: good protein, low calorie, calcium source",endometriosis,69.2,24.4,6.1
+Endometriosis,Brown Rice,Consume,112,2.6,0.9,23.5,1.8,0.0,10.0,Benefits: nutritional support,endometriosis,9.3,83.9,7.2
+Endometriosis,Apple,Consume,52,0.3,0.2,14.0,2.4,4.6,6.0,Benefits: low calorie,endometriosis,2.3,107.7,3.5
+Endometriosis,Lentils,Consume,116,9.0,0.4,20.0,7.9,1.5,19.0,"Benefits: high fiber, good protein",endometriosis,31.0,69.0,3.1
+Endometriosis,White Bread,Avoid,265,9.0,3.2,49.0,2.7,0.0,260.0,Concerns: not recommended for this condition,endometriosis,13.6,74.0,10.9
+Endometriosis,Alcohol,Avoid,220,0.0,0.0,20.0,0.0,0.0,0.0,Concerns: no fiber,endometriosis,0.0,36.4,0.0
+Endometriosis,White Bread,Avoid,265,9.0,3.2,49.0,2.7,0.0,260.0,Concerns: not recommended for this condition,endometriosis,13.6,74.0,10.9
+Endometriosis,Pastries,Avoid,406,6.0,21.0,51.0,1.5,0.0,20.0,"Concerns: high calorie, high fat, high refined carbs",endometriosis,5.9,50.2,46.6
+Endometriosis,Processed Meat,Avoid,290,14.0,25.0,3.0,0.0,0.0,10.0,"Concerns: high fat, no fiber",endometriosis,19.3,4.1,77.6
+PCOS,Oats,Consume,389,16.9,6.9,66.3,10.6,0.0,54.0,"Benefits: high fiber, good protein","pcos, polycystic ovary, hormonal imbalance, women hormones",17.4,68.2,16.0
+PCOS,Quinoa,Consume,120,4.4,1.9,21.3,2.8,0.0,17.0,Benefits: nutritional support,"pcos, polycystic ovary, hormonal imbalance, women hormones",14.7,71.0,14.2
+PCOS,Walnuts,Consume,654,15.2,65.2,13.7,6.7,1.3,98.0,"Benefits: high fiber, good protein","pcos, polycystic ovary, hormonal imbalance, women hormones",9.3,8.4,89.7
+PCOS,Sweet Potato,Consume,86,1.6,0.1,20.1,3.0,2.4,30.0,"Benefits: high fiber, low calorie","pcos, polycystic ovary, hormonal imbalance, women hormones",7.4,93.5,1.0
+PCOS,Sweet Potato,Consume,86,1.6,0.1,20.1,3.0,2.4,30.0,"Benefits: high fiber, low calorie","pcos, polycystic ovary, hormonal imbalance, women hormones",7.4,93.5,1.0
+PCOS,High Salt Snacks,Avoid,480,6.0,22.0,65.0,2.0,0.0,20.0,"Concerns: high calorie, high fat","pcos, polycystic ovary, hormonal imbalance, women hormones",5.0,54.2,41.2
+PCOS,White Bread,Avoid,265,9.0,3.2,49.0,2.7,0.0,260.0,Concerns: not recommended for this condition,"pcos, polycystic ovary, hormonal imbalance, women hormones",13.6,74.0,10.9
+PCOS,Refined Flour Products,Avoid,364,10.0,1.0,76.0,2.7,0.0,15.0,Concerns: high calorie,"pcos, polycystic ovary, hormonal imbalance, women hormones",11.0,83.5,2.5
+PCOS,Refined Flour Products,Avoid,364,10.0,1.0,76.0,2.7,0.0,15.0,Concerns: high calorie,"pcos, polycystic ovary, hormonal imbalance, women hormones",11.0,83.5,2.5
+PCOS,Ice Cream,Avoid,207,3.5,11.0,24.0,0.5,0.5,128.0,Concerns: not recommended for this condition,"pcos, polycystic ovary, hormonal imbalance, women hormones",6.8,46.4,47.8
+Fibromyalgia,Chia Seeds,Consume,486,16.5,30.7,42.1,34.4,1.6,631.0,"Benefits: high fiber, good protein, calcium source",fibromyalgia,13.6,34.7,56.9
+Fibromyalgia,Greek Yogurt,Consume,59,10.2,0.4,3.6,0.0,0.5,111.0,"Benefits: good protein, low calorie, calcium source",fibromyalgia,69.2,24.4,6.1
+Fibromyalgia,Almonds,Consume,579,21.2,49.9,21.6,12.5,0.0,264.0,"Benefits: high fiber, good protein, calcium source",fibromyalgia,14.6,14.9,77.6
+Fibromyalgia,Oats,Consume,389,16.9,6.9,66.3,10.6,0.0,54.0,"Benefits: high fiber, good protein",fibromyalgia,17.4,68.2,16.0
+Fibromyalgia,Oats,Consume,389,16.9,6.9,66.3,10.6,0.0,54.0,"Benefits: high fiber, good protein",fibromyalgia,17.4,68.2,16.0
+Fibromyalgia,Red Meat,Avoid,250,26.0,15.0,0.0,0.0,0.0,18.0,Concerns: no fiber,fibromyalgia,41.6,0.0,54.0
+Fibromyalgia,Fried Food,Avoid,450,5.0,30.0,40.0,1.0,0.0,10.0,"Concerns: high calorie, high fat",fibromyalgia,4.4,35.6,60.0
+Fibromyalgia,Fried Food,Avoid,450,5.0,30.0,40.0,1.0,0.0,10.0,"Concerns: high calorie, high fat",fibromyalgia,4.4,35.6,60.0
+Fibromyalgia,Full-fat Cheese,Avoid,402,25.0,33.0,1.3,0.0,0.0,721.0,"Concerns: high calorie, high fat, no fiber",fibromyalgia,24.9,1.3,73.9
+Fibromyalgia,White Bread,Avoid,265,9.0,3.2,49.0,2.7,0.0,260.0,Concerns: not recommended for this condition,fibromyalgia,13.6,74.0,10.9
+Glaucoma,Chia Seeds,Consume,486,16.5,30.7,42.1,34.4,1.6,631.0,"Benefits: high fiber, good protein, calcium source",glaucoma,13.6,34.7,56.9
+Glaucoma,Spinach,Consume,23,2.9,0.4,3.6,2.2,28.1,99.0,"Benefits: low calorie, rich in vitamin C",glaucoma,50.4,62.6,15.7
+Glaucoma,Salmon,Consume,208,20.0,13.0,0.0,0.0,3.0,13.0,Benefits: good protein,glaucoma,38.5,0.0,56.2
+Glaucoma,Carrots,Consume,41,0.9,0.2,9.6,2.8,5.9,33.0,Benefits: low calorie,glaucoma,8.8,93.7,4.4
+Glaucoma,Brown Rice,Consume,112,2.6,0.9,23.5,1.8,0.0,10.0,Benefits: nutritional support,glaucoma,9.3,83.9,7.2
+Glaucoma,Ice Cream,Avoid,207,3.5,11.0,24.0,0.5,0.5,128.0,Concerns: not recommended for this condition,glaucoma,6.8,46.4,47.8
+Glaucoma,Soda,Avoid,41,0.0,0.0,10.6,0.0,0.0,0.0,Concerns: no fiber,glaucoma,0.0,103.4,0.0
+Glaucoma,Refined Flour Products,Avoid,364,10.0,1.0,76.0,2.7,0.0,15.0,Concerns: high calorie,glaucoma,11.0,83.5,2.5
+Glaucoma,Sugary Drinks,Avoid,45,0.0,0.0,11.0,0.0,0.0,0.0,Concerns: no fiber,glaucoma,0.0,97.8,0.0
+Glaucoma,Processed Meat,Avoid,290,14.0,25.0,3.0,0.0,0.0,10.0,"Concerns: high fat, no fiber",glaucoma,19.3,4.1,77.6
+Cataracts,Greek Yogurt,Consume,59,10.2,0.4,3.6,0.0,0.5,111.0,"Benefits: good protein, low calorie, calcium source",cataracts,69.2,24.4,6.1
+Cataracts,Walnuts,Consume,654,15.2,65.2,13.7,6.7,1.3,98.0,"Benefits: high fiber, good protein",cataracts,9.3,8.4,89.7
+Cataracts,Carrots,Consume,41,0.9,0.2,9.6,2.8,5.9,33.0,Benefits: low calorie,cataracts,8.8,93.7,4.4
+Cataracts,Walnuts,Consume,654,15.2,65.2,13.7,6.7,1.3,98.0,"Benefits: high fiber, good protein",cataracts,9.3,8.4,89.7
+Cataracts,Sweet Potato,Consume,86,1.6,0.1,20.1,3.0,2.4,30.0,"Benefits: high fiber, low calorie",cataracts,7.4,93.5,1.0
+Cataracts,Full-fat Cheese,Avoid,402,25.0,33.0,1.3,0.0,0.0,721.0,"Concerns: high calorie, high fat, no fiber",cataracts,24.9,1.3,73.9
+Cataracts,Full-fat Cheese,Avoid,402,25.0,33.0,1.3,0.0,0.0,721.0,"Concerns: high calorie, high fat, no fiber",cataracts,24.9,1.3,73.9
+Cataracts,Soda,Avoid,41,0.0,0.0,10.6,0.0,0.0,0.0,Concerns: no fiber,cataracts,0.0,103.4,0.0
+Cataracts,White Bread,Avoid,265,9.0,3.2,49.0,2.7,0.0,260.0,Concerns: not recommended for this condition,cataracts,13.6,74.0,10.9
+Cataracts,Refined Flour Products,Avoid,364,10.0,1.0,76.0,2.7,0.0,15.0,Concerns: high calorie,cataracts,11.0,83.5,2.5
+Hearing Loss,Quinoa,Consume,120,4.4,1.9,21.3,2.8,0.0,17.0,Benefits: nutritional support,hearing loss,14.7,71.0,14.2
+Hearing Loss,Garlic,Consume,149,6.4,0.5,33.1,2.1,31.2,181.0,"Benefits: good protein, rich in vitamin C, calcium source",hearing loss,17.2,88.9,3.0
+Hearing Loss,Chia Seeds,Consume,486,16.5,30.7,42.1,34.4,1.6,631.0,"Benefits: high fiber, good protein, calcium source",hearing loss,13.6,34.7,56.9
+Hearing Loss,Sweet Potato,Consume,86,1.6,0.1,20.1,3.0,2.4,30.0,"Benefits: high fiber, low calorie",hearing loss,7.4,93.5,1.0
+Hearing Loss,Apple,Consume,52,0.3,0.2,14.0,2.4,4.6,6.0,Benefits: low calorie,hearing loss,2.3,107.7,3.5
+Hearing Loss,Red Meat,Avoid,250,26.0,15.0,0.0,0.0,0.0,18.0,Concerns: no fiber,hearing loss,41.6,0.0,54.0
+Hearing Loss,Butter,Avoid,717,0.9,81.1,0.1,0.0,0.0,24.0,"Concerns: high calorie, high fat, no fiber",hearing loss,0.5,0.1,101.8
+Hearing Loss,Refined Flour Products,Avoid,364,10.0,1.0,76.0,2.7,0.0,15.0,Concerns: high calorie,hearing loss,11.0,83.5,2.5
+Hearing Loss,Soda,Avoid,41,0.0,0.0,10.6,0.0,0.0,0.0,Concerns: no fiber,hearing loss,0.0,103.4,0.0
+Hearing Loss,White Bread,Avoid,265,9.0,3.2,49.0,2.7,0.0,260.0,Concerns: not recommended for this condition,hearing loss,13.6,74.0,10.9
+Sleep Apnea,Apple,Consume,52,0.3,0.2,14.0,2.4,4.6,6.0,Benefits: low calorie,sleep apnea,2.3,107.7,3.5
+Sleep Apnea,Oats,Consume,389,16.9,6.9,66.3,10.6,0.0,54.0,"Benefits: high fiber, good protein",sleep apnea,17.4,68.2,16.0
+Sleep Apnea,Green Tea,Consume,2,0.2,0.0,0.5,0.0,0.0,1.0,Benefits: low calorie,sleep apnea,40.0,100.0,0.0
+Sleep Apnea,Salmon,Consume,208,20.0,13.0,0.0,0.0,3.0,13.0,Benefits: good protein,sleep apnea,38.5,0.0,56.2
+Sleep Apnea,Beans,Consume,127,8.7,0.5,22.8,6.4,1.2,50.0,"Benefits: high fiber, good protein",sleep apnea,27.4,71.8,3.5
+Sleep Apnea,Candy,Avoid,400,0.0,5.0,93.0,0.0,0.0,5.0,"Concerns: high calorie, high refined carbs, no fiber",sleep apnea,0.0,93.0,11.2
+Sleep Apnea,Fried Food,Avoid,450,5.0,30.0,40.0,1.0,0.0,10.0,"Concerns: high calorie, high fat",sleep apnea,4.4,35.6,60.0
+Sleep Apnea,High Salt Snacks,Avoid,480,6.0,22.0,65.0,2.0,0.0,20.0,"Concerns: high calorie, high fat",sleep apnea,5.0,54.2,41.2
+Sleep Apnea,Ice Cream,Avoid,207,3.5,11.0,24.0,0.5,0.5,128.0,Concerns: not recommended for this condition,sleep apnea,6.8,46.4,47.8
+Sleep Apnea,Alcohol,Avoid,220,0.0,0.0,20.0,0.0,0.0,0.0,Concerns: no fiber,sleep apnea,0.0,36.4,0.0
+Skin Cancer,Carrots,Consume,41,0.9,0.2,9.6,2.8,5.9,33.0,Benefits: low calorie,skin cancer,8.8,93.7,4.4
+Skin Cancer,Salmon,Consume,208,20.0,13.0,0.0,0.0,3.0,13.0,Benefits: good protein,skin cancer,38.5,0.0,56.2
+Skin Cancer,Chia Seeds,Consume,486,16.5,30.7,42.1,34.4,1.6,631.0,"Benefits: high fiber, good protein, calcium source",skin cancer,13.6,34.7,56.9
+Skin Cancer,Almonds,Consume,579,21.2,49.9,21.6,12.5,0.0,264.0,"Benefits: high fiber, good protein, calcium source",skin cancer,14.6,14.9,77.6
+Skin Cancer,Chia Seeds,Consume,486,16.5,30.7,42.1,34.4,1.6,631.0,"Benefits: high fiber, good protein, calcium source",skin cancer,13.6,34.7,56.9
+Skin Cancer,White Bread,Avoid,265,9.0,3.2,49.0,2.7,0.0,260.0,Concerns: not recommended for this condition,skin cancer,13.6,74.0,10.9
+Skin Cancer,Soda,Avoid,41,0.0,0.0,10.6,0.0,0.0,0.0,Concerns: no fiber,skin cancer,0.0,103.4,0.0
+Skin Cancer,Candy,Avoid,400,0.0,5.0,93.0,0.0,0.0,5.0,"Concerns: high calorie, high refined carbs, no fiber",skin cancer,0.0,93.0,11.2
+Skin Cancer,Full-fat Cheese,Avoid,402,25.0,33.0,1.3,0.0,0.0,721.0,"Concerns: high calorie, high fat, no fiber",skin cancer,24.9,1.3,73.9
+Skin Cancer,Alcohol,Avoid,220,0.0,0.0,20.0,0.0,0.0,0.0,Concerns: no fiber,skin cancer,0.0,36.4,0.0
+Breast Cancer,Walnuts,Consume,654,15.2,65.2,13.7,6.7,1.3,98.0,"Benefits: high fiber, good protein",breast cancer,9.3,8.4,89.7
+Breast Cancer,Walnuts,Consume,654,15.2,65.2,13.7,6.7,1.3,98.0,"Benefits: high fiber, good protein",breast cancer,9.3,8.4,89.7
+Breast Cancer,Garlic,Consume,149,6.4,0.5,33.1,2.1,31.2,181.0,"Benefits: good protein, rich in vitamin C, calcium source",breast cancer,17.2,88.9,3.0
+Breast Cancer,Apple,Consume,52,0.3,0.2,14.0,2.4,4.6,6.0,Benefits: low calorie,breast cancer,2.3,107.7,3.5
+Breast Cancer,Blueberries,Consume,57,0.7,0.3,14.5,2.4,9.7,6.0,Benefits: low calorie,breast cancer,4.9,101.8,4.7
+Breast Cancer,High Salt Snacks,Avoid,480,6.0,22.0,65.0,2.0,0.0,20.0,"Concerns: high calorie, high fat",breast cancer,5.0,54.2,41.2
+Breast Cancer,Chips,Avoid,536,7.0,35.0,53.0,5.0,0.0,20.0,"Concerns: high calorie, high fat",breast cancer,5.2,39.6,58.8
+Breast Cancer,Candy,Avoid,400,0.0,5.0,93.0,0.0,0.0,5.0,"Concerns: high calorie, high refined carbs, no fiber",breast cancer,0.0,93.0,11.2
+Breast Cancer,Processed Meat,Avoid,290,14.0,25.0,3.0,0.0,0.0,10.0,"Concerns: high fat, no fiber",breast cancer,19.3,4.1,77.6
+Breast Cancer,Ice Cream,Avoid,207,3.5,11.0,24.0,0.5,0.5,128.0,Concerns: not recommended for this condition,breast cancer,6.8,46.4,47.8
+Prostate Cancer,Chia Seeds,Consume,486,16.5,30.7,42.1,34.4,1.6,631.0,"Benefits: high fiber, good protein, calcium source",prostate cancer,13.6,34.7,56.9
+Prostate Cancer,Almonds,Consume,579,21.2,49.9,21.6,12.5,0.0,264.0,"Benefits: high fiber, good protein, calcium source",prostate cancer,14.6,14.9,77.6
+Prostate Cancer,Salmon,Consume,208,20.0,13.0,0.0,0.0,3.0,13.0,Benefits: good protein,prostate cancer,38.5,0.0,56.2
+Prostate Cancer,Oats,Consume,389,16.9,6.9,66.3,10.6,0.0,54.0,"Benefits: high fiber, good protein",prostate cancer,17.4,68.2,16.0
+Prostate Cancer,Apple,Consume,52,0.3,0.2,14.0,2.4,4.6,6.0,Benefits: low calorie,prostate cancer,2.3,107.7,3.5
+Prostate Cancer,Ice Cream,Avoid,207,3.5,11.0,24.0,0.5,0.5,128.0,Concerns: not recommended for this condition,prostate cancer,6.8,46.4,47.8
+Prostate Cancer,Red Meat,Avoid,250,26.0,15.0,0.0,0.0,0.0,18.0,Concerns: no fiber,prostate cancer,41.6,0.0,54.0
+Prostate Cancer,Pastries,Avoid,406,6.0,21.0,51.0,1.5,0.0,20.0,"Concerns: high calorie, high fat, high refined carbs",prostate cancer,5.9,50.2,46.6
+Prostate Cancer,High Salt Snacks,Avoid,480,6.0,22.0,65.0,2.0,0.0,20.0,"Concerns: high calorie, high fat",prostate cancer,5.0,54.2,41.2
+Prostate Cancer,White Bread,Avoid,265,9.0,3.2,49.0,2.7,0.0,260.0,Concerns: not recommended for this condition,prostate cancer,13.6,74.0,10.9
+Lung Cancer,Garlic,Consume,149,6.4,0.5,33.1,2.1,31.2,181.0,"Benefits: good protein, rich in vitamin C, calcium source",lung cancer,17.2,88.9,3.0
+Lung Cancer,Apple,Consume,52,0.3,0.2,14.0,2.4,4.6,6.0,Benefits: low calorie,lung cancer,2.3,107.7,3.5
+Lung Cancer,Brown Rice,Consume,112,2.6,0.9,23.5,1.8,0.0,10.0,Benefits: nutritional support,lung cancer,9.3,83.9,7.2
+Lung Cancer,Quinoa,Consume,120,4.4,1.9,21.3,2.8,0.0,17.0,Benefits: nutritional support,lung cancer,14.7,71.0,14.2
+Lung Cancer,Garlic,Consume,149,6.4,0.5,33.1,2.1,31.2,181.0,"Benefits: good protein, rich in vitamin C, calcium source",lung cancer,17.2,88.9,3.0
+Lung Cancer,White Bread,Avoid,265,9.0,3.2,49.0,2.7,0.0,260.0,Concerns: not recommended for this condition,lung cancer,13.6,74.0,10.9
+Lung Cancer,Soda,Avoid,41,0.0,0.0,10.6,0.0,0.0,0.0,Concerns: no fiber,lung cancer,0.0,103.4,0.0
+Lung Cancer,Candy,Avoid,400,0.0,5.0,93.0,0.0,0.0,5.0,"Concerns: high calorie, high refined carbs, no fiber",lung cancer,0.0,93.0,11.2
+Lung Cancer,Alcohol,Avoid,220,0.0,0.0,20.0,0.0,0.0,0.0,Concerns: no fiber,lung cancer,0.0,36.4,0.0
+Lung Cancer,Pastries,Avoid,406,6.0,21.0,51.0,1.5,0.0,20.0,"Concerns: high calorie, high fat, high refined carbs",lung cancer,5.9,50.2,46.6
+Leukemia,Chia Seeds,Consume,486,16.5,30.7,42.1,34.4,1.6,631.0,"Benefits: high fiber, good protein, calcium source",leukemia,13.6,34.7,56.9
+Leukemia,Blueberries,Consume,57,0.7,0.3,14.5,2.4,9.7,6.0,Benefits: low calorie,leukemia,4.9,101.8,4.7
+Leukemia,Tomatoes,Consume,18,0.9,0.2,3.9,1.2,14.0,10.0,"Benefits: low calorie, rich in vitamin C",leukemia,20.0,86.7,10.0
+Leukemia,Carrots,Consume,41,0.9,0.2,9.6,2.8,5.9,33.0,Benefits: low calorie,leukemia,8.8,93.7,4.4
+Leukemia,Brown Rice,Consume,112,2.6,0.9,23.5,1.8,0.0,10.0,Benefits: nutritional support,leukemia,9.3,83.9,7.2
+Leukemia,White Bread,Avoid,265,9.0,3.2,49.0,2.7,0.0,260.0,Concerns: not recommended for this condition,leukemia,13.6,74.0,10.9
+Leukemia,Full-fat Cheese,Avoid,402,25.0,33.0,1.3,0.0,0.0,721.0,"Concerns: high calorie, high fat, no fiber",leukemia,24.9,1.3,73.9
+Leukemia,Full-fat Cheese,Avoid,402,25.0,33.0,1.3,0.0,0.0,721.0,"Concerns: high calorie, high fat, no fiber",leukemia,24.9,1.3,73.9
+Leukemia,Full-fat Cheese,Avoid,402,25.0,33.0,1.3,0.0,0.0,721.0,"Concerns: high calorie, high fat, no fiber",leukemia,24.9,1.3,73.9
+Leukemia,Full-fat Cheese,Avoid,402,25.0,33.0,1.3,0.0,0.0,721.0,"Concerns: high calorie, high fat, no fiber",leukemia,24.9,1.3,73.9
+Lymphoma,Walnuts,Consume,654,15.2,65.2,13.7,6.7,1.3,98.0,"Benefits: high fiber, good protein",lymphoma,9.3,8.4,89.7
+Lymphoma,Quinoa,Consume,120,4.4,1.9,21.3,2.8,0.0,17.0,Benefits: nutritional support,lymphoma,14.7,71.0,14.2
+Lymphoma,Tomatoes,Consume,18,0.9,0.2,3.9,1.2,14.0,10.0,"Benefits: low calorie, rich in vitamin C",lymphoma,20.0,86.7,10.0
+Lymphoma,Carrots,Consume,41,0.9,0.2,9.6,2.8,5.9,33.0,Benefits: low calorie,lymphoma,8.8,93.7,4.4
+Lymphoma,Sweet Potato,Consume,86,1.6,0.1,20.1,3.0,2.4,30.0,"Benefits: high fiber, low calorie",lymphoma,7.4,93.5,1.0
+Lymphoma,Full-fat Cheese,Avoid,402,25.0,33.0,1.3,0.0,0.0,721.0,"Concerns: high calorie, high fat, no fiber",lymphoma,24.9,1.3,73.9
+Lymphoma,Sugary Drinks,Avoid,45,0.0,0.0,11.0,0.0,0.0,0.0,Concerns: no fiber,lymphoma,0.0,97.8,0.0
+Lymphoma,Processed Meat,Avoid,290,14.0,25.0,3.0,0.0,0.0,10.0,"Concerns: high fat, no fiber",lymphoma,19.3,4.1,77.6
+Lymphoma,Sugary Drinks,Avoid,45,0.0,0.0,11.0,0.0,0.0,0.0,Concerns: no fiber,lymphoma,0.0,97.8,0.0
+Lymphoma,Butter,Avoid,717,0.9,81.1,0.1,0.0,0.0,24.0,"Concerns: high calorie, high fat, no fiber",lymphoma,0.5,0.1,101.8
+Pancreatic Cancer,Green Tea,Consume,2,0.2,0.0,0.5,0.0,0.0,1.0,Benefits: low calorie,pancreatic cancer,40.0,100.0,0.0
+Pancreatic Cancer,Blueberries,Consume,57,0.7,0.3,14.5,2.4,9.7,6.0,Benefits: low calorie,pancreatic cancer,4.9,101.8,4.7
+Pancreatic Cancer,Apple,Consume,52,0.3,0.2,14.0,2.4,4.6,6.0,Benefits: low calorie,pancreatic cancer,2.3,107.7,3.5
+Pancreatic Cancer,Blueberries,Consume,57,0.7,0.3,14.5,2.4,9.7,6.0,Benefits: low calorie,pancreatic cancer,4.9,101.8,4.7
+Pancreatic Cancer,Garlic,Consume,149,6.4,0.5,33.1,2.1,31.2,181.0,"Benefits: good protein, rich in vitamin C, calcium source",pancreatic cancer,17.2,88.9,3.0
+Pancreatic Cancer,Processed Meat,Avoid,290,14.0,25.0,3.0,0.0,0.0,10.0,"Concerns: high fat, no fiber",pancreatic cancer,19.3,4.1,77.6
+Pancreatic Cancer,Soda,Avoid,41,0.0,0.0,10.6,0.0,0.0,0.0,Concerns: no fiber,pancreatic cancer,0.0,103.4,0.0
+Pancreatic Cancer,Processed Meat,Avoid,290,14.0,25.0,3.0,0.0,0.0,10.0,"Concerns: high fat, no fiber",pancreatic cancer,19.3,4.1,77.6
+Pancreatic Cancer,Red Meat,Avoid,250,26.0,15.0,0.0,0.0,0.0,18.0,Concerns: no fiber,pancreatic cancer,41.6,0.0,54.0
+Pancreatic Cancer,High Salt Snacks,Avoid,480,6.0,22.0,65.0,2.0,0.0,20.0,"Concerns: high calorie, high fat",pancreatic cancer,5.0,54.2,41.2
+Kidney Stones,Blueberries,Consume,57,0.7,0.3,14.5,2.4,9.7,6.0,Benefits: low calorie,"kidney stones, renal stones, nephrolithiasis",4.9,101.8,4.7
+Kidney Stones,Green Tea,Consume,2,0.2,0.0,0.5,0.0,0.0,1.0,Benefits: low calorie,"kidney stones, renal stones, nephrolithiasis",40.0,100.0,0.0
+Kidney Stones,Tomatoes,Consume,18,0.9,0.2,3.9,1.2,14.0,10.0,"Benefits: low calorie, rich in vitamin C","kidney stones, renal stones, nephrolithiasis",20.0,86.7,10.0
+Kidney Stones,Spinach,Consume,23,2.9,0.4,3.6,2.2,28.1,99.0,"Benefits: low calorie, rich in vitamin C","kidney stones, renal stones, nephrolithiasis",50.4,62.6,15.7
+Kidney Stones,Broccoli,Consume,34,2.8,0.4,7.0,2.6,89.2,47.0,"Benefits: low calorie, rich in vitamin C","kidney stones, renal stones, nephrolithiasis",32.9,82.4,10.6
+Kidney Stones,Butter,Avoid,717,0.9,81.1,0.1,0.0,0.0,24.0,"Concerns: high calorie, high fat, no fiber","kidney stones, renal stones, nephrolithiasis",0.5,0.1,101.8
+Kidney Stones,Chips,Avoid,536,7.0,35.0,53.0,5.0,0.0,20.0,"Concerns: high calorie, high fat","kidney stones, renal stones, nephrolithiasis",5.2,39.6,58.8
+Kidney Stones,Pastries,Avoid,406,6.0,21.0,51.0,1.5,0.0,20.0,"Concerns: high calorie, high fat, high refined carbs","kidney stones, renal stones, nephrolithiasis",5.9,50.2,46.6
+Kidney Stones,Pastries,Avoid,406,6.0,21.0,51.0,1.5,0.0,20.0,"Concerns: high calorie, high fat, high refined carbs","kidney stones, renal stones, nephrolithiasis",5.9,50.2,46.6
+Kidney Stones,Ice Cream,Avoid,207,3.5,11.0,24.0,0.5,0.5,128.0,Concerns: not recommended for this condition,"kidney stones, renal stones, nephrolithiasis",6.8,46.4,47.8
+Gallstones,Greek Yogurt,Consume,59,10.2,0.4,3.6,0.0,0.5,111.0,"Benefits: good protein, low calorie, calcium source",gallstones,69.2,24.4,6.1
+Gallstones,Sweet Potato,Consume,86,1.6,0.1,20.1,3.0,2.4,30.0,"Benefits: high fiber, low calorie",gallstones,7.4,93.5,1.0
+Gallstones,Brown Rice,Consume,112,2.6,0.9,23.5,1.8,0.0,10.0,Benefits: nutritional support,gallstones,9.3,83.9,7.2
+Gallstones,Chia Seeds,Consume,486,16.5,30.7,42.1,34.4,1.6,631.0,"Benefits: high fiber, good protein, calcium source",gallstones,13.6,34.7,56.9
+Gallstones,Almonds,Consume,579,21.2,49.9,21.6,12.5,0.0,264.0,"Benefits: high fiber, good protein, calcium source",gallstones,14.6,14.9,77.6
+Gallstones,Fried Food,Avoid,450,5.0,30.0,40.0,1.0,0.0,10.0,"Concerns: high calorie, high fat",gallstones,4.4,35.6,60.0
+Gallstones,Ice Cream,Avoid,207,3.5,11.0,24.0,0.5,0.5,128.0,Concerns: not recommended for this condition,gallstones,6.8,46.4,47.8
+Gallstones,Processed Meat,Avoid,290,14.0,25.0,3.0,0.0,0.0,10.0,"Concerns: high fat, no fiber",gallstones,19.3,4.1,77.6
+Gallstones,Sugary Drinks,Avoid,45,0.0,0.0,11.0,0.0,0.0,0.0,Concerns: no fiber,gallstones,0.0,97.8,0.0
+Gallstones,Full-fat Cheese,Avoid,402,25.0,33.0,1.3,0.0,0.0,721.0,"Concerns: high calorie, high fat, no fiber",gallstones,24.9,1.3,73.9

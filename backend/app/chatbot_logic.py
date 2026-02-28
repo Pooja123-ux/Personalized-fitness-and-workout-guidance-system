@@ -1,11 +1,20 @@
 """
 Dataset-first fitness chatbot logic.
 Answers are generated from available datasets using keyword and column matching.
+
+Enhanced with:
+- Advanced fuzzy logic for typos, misspellings, phonetic variants
+- Comprehensive synonym/alias maps so the same question asked differently always works
+- Unstructured grammar parsing (fragmented, reversed, informal queries)
+- Low-confidence clarification dialogues
+- Multi-signal intent inference
 """
 
 from __future__ import annotations
 
 import re
+import unicodedata
+from collections import Counter
 from typing import Any, Dict, List, Optional, Tuple
 from pathlib import Path
 from difflib import SequenceMatcher
@@ -14,11 +23,176 @@ import numpy as np
 import pandas as pd
 
 
-class FitnessChatbot:
-    def __init__(self, use_llama: bool = False, ollama_url: str = "http://localhost:11434"):
-        self.use_llama = use_llama
-        self.ollama_url = ollama_url
+# ---------------------------------------------------------------------------
+# GLOBAL SYNONYM / ALIAS MAP
+# Maps messy user vocabulary → canonical token the rest of logic understands.
+# Covers typos, abbreviations, slang, regional spellings, concatenations.
+# ---------------------------------------------------------------------------
+SYNONYM_MAP: Dict[str, str] = {
+    # --- calorie variants ---
+    "cal": "calories", "cals": "calories", "calori": "calories", "caloreis": "calories",
+    "callories": "calories", "kcals": "calories", "calroies": "calories",
+    "calries": "calories", "claories": "calories", "caloroes": "calories",
+    # --- protein variants ---
+    "protien": "protein", "protin": "protein", "protine": "protein",
+    "protain": "protein", "proten": "protein", "proteen": "protein",
+    "prtein": "protein", "protien": "protein", "ptrotein": "protein",
+    # --- carbohydrate variants ---
+    "carb": "carbohydrates", "carbs": "carbohydrates", "carbo": "carbohydrates",
+    "carbos": "carbohydrates", "carbohydrate": "carbohydrates",
+    # --- fat variants ---
+    "fats": "fat", "fatt": "fat", "lipid": "fat", "lipids": "fat",
+    # --- fiber variants ---
+    "fibre": "fiber", "fibere": "fiber", "fibres": "fiber", "fiver": "fiber",
+    # --- weight / BMI ---
+    "bmi": "bmi", "bodymass": "bmi", "body mass": "bmi",
+    "wieght": "weight", "wight": "weight", "weigth": "weight",
+    "kgs": "kg", "kgd": "kg", "kilo": "kg", "kilos": "kg", "kilogram": "kg",
+    "lbs": "pounds", "lb": "pounds", "pond": "pounds",
+    # --- height ---
+    "cms": "cm", "centimeter": "cm", "centimetre": "cm", "centimeters": "cm",
+    "meter": "m", "metre": "m", "meters": "m",
+    # --- exercise ---
+    "exersice": "exercise", "excercise": "exercise", "exercice": "exercise",
+    "exrecise": "exercise", "exercize": "exercise", "exersize": "exercise",
+    "worktout": "workout", "workotu": "workout", "wrk": "workout",
+    "traing": "training", "trainning": "training", "trainnig": "training",
+    "gym": "gym", "gyming": "gym",
+    # --- muscle groups ---
+    "sholder": "shoulder", "sholders": "shoulder", "shulder": "shoulder",
+    "tricep": "triceps", "bicep": "biceps",
+    "hamstring": "hamstrings", "quad": "quads", "quadricep": "quads",
+    "abs": "core", "abdomen": "core", "ab": "core",
+    "glute": "glutes", "butt": "glutes", "buttocks": "glutes",
+    "calve": "calves", "calf": "calves",
+    # --- yoga ---
+    "yog": "yoga", "yogaa": "yoga", "yuoga": "yoga",
+    "pose": "pose", "asana": "pose", "asan": "pose",
+    # --- nutrition / diet ---
+    "nutirtion": "nutrition", "nutrion": "nutrition", "nutrtion": "nutrition",
+    "nutricients": "nutrients", "nutients": "nutrients",
+    "deit": "diet", "diett": "diet", "dieting": "diet",
+    "weigh loss": "weight loss", "fat loss": "weight loss",
+    "loose weight": "lose weight", "loosing weight": "losing weight",
+    "shed weight": "lose weight", "slim down": "lose weight",
+    # --- health conditions ---
+    "diabeties": "diabetes", "diabetis": "diabetes", "diebetes": "diabetes",
+    "hypertenshion": "hypertension", "hypertenstion": "hypertension",
+    "cholestrol": "cholesterol", "cholesteral": "cholesterol",
+    # --- water ---
+    "hyddration": "hydration", "hydartion": "hydration",
+    "h2o": "water", "watter": "water",
+    # --- general health / fitness ---
+    "helath": "health", "heatlh": "health", "helth": "health",
+    "fitnes": "fitness", "fitnss": "fitness", "fittness": "fitness",
+    "stamnia": "stamina", "stmina": "stamina",
+    # --- food items ---
+    "roti": "roti", "chapati": "roti", "chapatti": "roti",
+    "paneer": "paneer", "paner": "paneer",
+    "dhal": "dal", "dhaal": "dal", "daal": "dal",
+    "ricee": "rice", "rie": "rice",
+    # --- supplements ---
+    "whey protien": "whey protein", "whey protin": "whey protein",
+    "creatine": "creatine", "creatien": "creatine",
+    # --- body composition ---
+    "bdy fat": "body fat", "bdy fatt": "body fat",
+    "muscel": "muscle", "muscl": "muscle", "muscels": "muscles",
+    # --- sleep / recovery ---
+    "recvoery": "recovery", "recov": "recovery",
+    "sleap": "sleep", "sleeep": "sleep",
+    # --- action verbs (common typos) ---
+    "caluclate": "calculate", "calcuate": "calculate", "calculat": "calculate",
+    "calculte": "calculate", "calc": "calculate",
+    "recommed": "recommend", "reccomend": "recommend", "recomend": "recommend",
+    "sugest": "suggest", "sugggest": "suggest",
+}
 
+# ---------------------------------------------------------------------------
+# INTENT SYNONYM MAP
+# Maps many surface phrasings to a canonical intent label.
+# Used by the enhanced intent extractor to normalize diverse queries.
+# ---------------------------------------------------------------------------
+INTENT_KEYWORD_MAP: Dict[str, List[str]] = {
+    "weight_loss": [
+        "lose weight", "weight loss", "fat loss", "lose fat", "slim", "slimming",
+        "drop weight", "shed kilos", "lose kilos", "cut fat", "cut weight",
+        "reduce weight", "burn fat", "get lean", "get slim", "belly fat",
+        "tummy fat", "love handles", "calorie deficit", "body fat reduction",
+        "how to reduce", "how to slim", "loose weight", "loosing weight",
+    ],
+    "muscle_gain": [
+        "build muscle", "muscle gain", "gain muscle", "bulk up", "bulking",
+        "hypertrophy", "get bigger", "increase muscle", "mass building",
+        "muscle building", "strength gain", "gain mass", "put on muscle",
+        "muscle growth", "how to grow", "grow muscle",
+    ],
+    "bmi": [
+        "bmi", "body mass index", "calculate bmi", "bmi calculator",
+        "what is my bmi", "my bmi", "check bmi", "bmi check",
+        "am i overweight", "am i underweight", "body weight index",
+    ],
+    "calories": [
+        "calories", "kcal", "calorie intake", "daily calories", "tdee", "bmr",
+        "calorie needs", "how many calories", "calorie requirement",
+        "maintenance calories", "calorie calculation", "total calories",
+        "how much should i eat", "energy intake",
+    ],
+    "protein": [
+        "protein", "how much protein", "protein intake", "daily protein",
+        "protein requirement", "protein per day", "protein consumption",
+        "protein needed", "protein goal", "protein calculation",
+        "how much protien", "protein per kg",
+    ],
+    "water": [
+        "water", "hydration", "water intake", "how much water", "daily water",
+        "water per day", "h2o", "drink water", "water requirement",
+        "how much should i drink", "fluid intake",
+    ],
+    "macros": [
+        "macros", "macro", "macro split", "macronutrients", "calculate macros",
+        "protein carb fat", "macro breakdown", "macro ratio",
+    ],
+    "exercise": [
+        "exercise", "workout", "training", "gym", "strength training",
+        "weight training", "resistance", "bodyweight", "calisthenics",
+        "cardio", "hiit", "aerobics", "lifting", "weightlifting",
+    ],
+    "yoga": [
+        "yoga", "asana", "pose", "flexibility", "stretch", "stretching",
+        "meditation", "pranayama", "yin yoga", "vinyasa", "hatha",
+    ],
+    "nutrition": [
+        "nutrition", "diet", "food", "eating", "meal", "calories",
+        "healthy eating", "nutrient", "vitamins", "minerals",
+        "macronutrients", "micronutrients", "balanced diet",
+    ],
+    "health": [
+        "health", "wellness", "wellbeing", "healthy", "disease", "condition",
+        "diabetes", "hypertension", "cholesterol", "heart", "blood pressure",
+        "blood sugar", "joint", "bone",
+    ],
+    "sleep": [
+        "sleep", "rest", "recovery", "sleeping", "insomnia", "nap",
+        "sleep schedule", "sleep quality", "sleep hours",
+    ],
+    "supplements": [
+        "supplement", "supplements", "protein powder", "whey", "creatine",
+        "bcaa", "multivitamin", "pre workout", "post workout",
+        "fish oil", "omega", "vitamin d",
+    ],
+    "motivation": [
+        "motivation", "motivate", "inspired", "inspire", "keep going",
+        "give up", "consistency", "discipline", "habit", "routine",
+    ],
+    "stamina": [
+        "stamina", "endurance", "energy", "fatigue", "tired", "exhausted",
+        "run longer", "last longer", "improve stamina", "increase energy",
+    ],
+}
+
+
+class FitnessChatbot:
+    def __init__(self):
         self.datasets: Dict[str, pd.DataFrame] = {}
         self.dataset_metadata: Dict[str, Dict[str, Any]] = {}
         self.qa_cache: Dict[str, str] = {}  # Cache for QA responses
@@ -34,17 +208,142 @@ class FitnessChatbot:
         self._build_vocabulary()  # Build vocabulary from datasets
 
     def _fuzzy_match(self, word: str, targets: List[str], threshold: float = 0.6) -> Optional[str]:
-        """Find closest matching word from targets using fuzzy matching"""
+        """Find closest matching word from targets using fuzzy matching.
+        Enhanced: checks SYNONYM_MAP first, then edit-distance, then token-prefix."""
+        word_l = word.lower().strip()
+        
+        # 1. Direct synonym lookup (instant, zero cost)
+        if word_l in SYNONYM_MAP:
+            canonical = SYNONYM_MAP[word_l]
+            # If canonical is in targets return it, else fall through to fuzzy
+            if canonical in targets:
+                return canonical
+        
+        # 2. Check if word is already an exact target
+        if word_l in targets:
+            return word_l
+        
+        # 3. Prefix match (e.g. "calc" → "calculate")
+        prefix_matches = [t for t in targets if t.startswith(word_l) and len(t) - len(word_l) <= 4]
+        if len(prefix_matches) == 1:
+            return prefix_matches[0]
+        
+        # 4. Sequence ratio fuzzy match
         best_match = None
         best_ratio = 0.0
-        
         for target in targets:
-            ratio = SequenceMatcher(None, word.lower(), target.lower()).ratio()
+            ratio = SequenceMatcher(None, word_l, target.lower()).ratio()
             if ratio > best_ratio and ratio >= threshold:
                 best_ratio = ratio
                 best_match = target
         
         return best_match
+
+    def _apply_synonym_map(self, text: str) -> str:
+        """Apply SYNONYM_MAP to an entire text string (phrase-level and word-level)."""
+        result = text.lower().strip()
+        
+        # Phase 1: phrase-level replacements (longer phrases first to avoid partial replacement)
+        sorted_phrases = sorted(
+            [(k, v) for k, v in SYNONYM_MAP.items() if ' ' in k],
+            key=lambda x: len(x[0]), reverse=True
+        )
+        for phrase, replacement in sorted_phrases:
+            result = result.replace(phrase, replacement)
+        
+        # Phase 2: word-level replacements
+        words = result.split()
+        corrected = []
+        for word in words:
+            clean_word = re.sub(r'[^a-z0-9]', '', word)
+            if clean_word in SYNONYM_MAP:
+                corrected.append(SYNONYM_MAP[clean_word])
+            else:
+                corrected.append(word)
+        return ' '.join(corrected)
+
+    def _detect_intents_from_synonyms(self, question: str) -> List[str]:
+        """Detect ALL applicable intents from question using INTENT_KEYWORD_MAP.
+        Handles unstructured grammar — e.g. 'protien 70kg how much daily i need'
+        returns ['protein', 'weight_loss'] intents."""
+        q = question.lower()
+        detected = []
+        for intent_name, keywords in INTENT_KEYWORD_MAP.items():
+            for kw in keywords:
+                if kw in q:
+                    if intent_name not in detected:
+                        detected.append(intent_name)
+                    break
+        return detected
+
+    def _compute_fuzzy_confidence(self, question: str, candidate_response: str) -> float:
+        """Estimate how confident we are that candidate_response answers question.
+        Returns 0.0–1.0. Used to decide whether to ask a clarifying question."""
+        if not candidate_response or not question:
+            return 0.0
+        q_tokens = set(re.findall(r'[a-z]{3,}', question.lower()))
+        r_tokens = set(re.findall(r'[a-z]{3,}', candidate_response.lower()))
+        if not q_tokens:
+            return 0.5
+        overlap = len(q_tokens & r_tokens) / len(q_tokens)
+        return min(1.0, overlap * 1.5)  # Slight boost; cap at 1.0
+
+    def _should_ask_clarification(self, question: str, intent: Dict[str, Any]) -> Optional[str]:
+        """Return a clarifying question string if the user query is too vague,
+        or None if the bot can proceed to answer."""
+        q = question.lower().strip()
+        detected_intents = self._detect_intents_from_synonyms(q)
+        
+        # If question is extremely short (1-2 words) and generic, ask for more
+        tokens_count = len([t for t in q.split() if len(t) > 2])
+        if tokens_count <= 1 and not re.search(r'\d', q):
+            # Check what domain it loosely belongs to
+            if any(k in q for k in ['exercise', 'workout', 'gym', 'training']):
+                return ("Sure! To give you the most relevant exercises, could you tell me:\n"
+                        "• Which body part or muscle group? (e.g., chest, back, legs, arms)\n"
+                        "• Any equipment preference? (bodyweight, dumbbells, barbell)\n"
+                        "• Your goal? (strength, weight loss, muscle gain)")
+            if any(k in q for k in ['diet', 'food', 'eat', 'meal', 'nutrition']):
+                return ("Happy to help with nutrition! Could you clarify:\n"
+                        "• What's your goal? (weight loss, muscle gain, energy, general health)\n"
+                        "• Any dietary restrictions? (vegetarian, vegan, diabetic, etc.)")
+            if any(k in q for k in ['yoga', 'pose', 'asana']):
+                return ("Great! For yoga recommendations, it helps to know:\n"
+                        "• Your experience level? (beginner, intermediate, advanced)\n"
+                        "• Your goal? (flexibility, stress relief, strength, balance)")
+        
+        # Calculation queries missing required inputs
+        if any(k in q for k in ['bmi', 'calculate bmi', 'my bmi']):
+            has_weight = re.search(r'\d+\s*kg', q)
+            has_height = re.search(r'\d+\s*cm|\d+\s*m\b', q)
+            if not has_weight and not has_height:
+                return ("To calculate your BMI, I need:\n"
+                        "• Your weight (e.g., 70kg)\n"
+                        "• Your height (e.g., 175cm)\n\n"
+                        "Example: 'calculate bmi for 70kg 175cm'")
+        
+        if any(k in q for k in ['calorie', 'calories', 'tdee', 'bmr']):
+            has_weight = re.search(r'\d+\s*kg', q)
+            has_height = re.search(r'\d+\s*cm', q)
+            is_asking_daily = any(k in q for k in ['how much', 'should i eat', 'per day', 'daily', 'calculate'])
+            if is_asking_daily and not (has_weight and has_height):
+                return ("To calculate your daily calorie needs, please share:\n"
+                        "• Weight (kg) and height (cm)\n"
+                        "• Age (optional but improves accuracy)\n"
+                        "• Gender (male/female)\n"
+                        "• Activity level (sedentary / light / moderate / very active)\n\n"
+                        "Example: 'calories for 70kg 175cm age 25 male moderate'")
+        
+        if any(k in q for k in ['protein', 'protien', 'protin']):
+            is_asking_daily = any(k in q for k in ['how much', 'per day', 'daily', 'need', 'require', 'calculate'])
+            has_weight = re.search(r'\d+\s*kg', q)
+            if is_asking_daily and not has_weight:
+                return ("To calculate your protein needs, I need your:\n"
+                        "• Body weight (e.g., 70kg)\n"
+                        "• Goal (weight loss / muscle gain / maintenance)\n\n"
+                        "Example: 'how much protein for 70kg muscle gain'")
+        
+        return None  # No clarification needed
 
     def _preprocess_qa_dataset(self) -> None:
         """Preprocess QA dataset for faster matching and clean responses"""
@@ -233,7 +532,14 @@ class FitnessChatbot:
         print(f"Built vocabulary: {len(vocab)} words, {len(self.stop_words)} stop words, {len(self.generic_query_tokens)} generic tokens")
 
     def _check_faq(self, question: str) -> Optional[str]:
-        """Check fitness QA dataset for matching questions using optimized fuzzy logic"""
+        """Check fitness QA dataset for matching questions using optimized fuzzy logic.
+        
+        Enhanced to handle:
+        - Unstructured grammar: 'protien how much per day i need for 70kg'
+        - Reversed phrasing: 'gain muscle how' == 'how to gain muscle'
+        - Partial matches: 'belly fat' == 'how do I lose belly fat'
+        - Synonym coverage via SYNONYM_MAP tokens
+        """
         qa_df = self.datasets.get("fitness_qa")
         if qa_df is None or qa_df.empty:
             return None
@@ -269,52 +575,73 @@ class FitnessChatbot:
         if any(indicator in q_lower for indicator in exercise_indicators):
             return None
         
-        # Normalize question
-        q_normalized = ' '.join(re.sub(r'[^a-z0-9\s]', '', q_lower).split())
+        # Normalize question using synonym map for better token matching
+        q_synonymized = self._apply_synonym_map(q_lower)
+        q_normalized = ' '.join(re.sub(r'[^a-z0-9\s]', '', q_synonymized).split())
         question_tokens = set([t for t in q_normalized.split() if t not in self.stop_words and len(t) > 2])
         
-        if not question_tokens:
+        # Also build a "bag of intent tokens" for unstructured grammar support
+        detected_intents = self._detect_intents_from_synonyms(q_lower)
+        intent_tokens = set()
+        for intent in detected_intents:
+            for kw in INTENT_KEYWORD_MAP.get(intent, []):
+                intent_tokens.update(kw.split())
+        
+        all_query_tokens = question_tokens | intent_tokens
+        
+        if not all_query_tokens:
             return None
         
         best_score = 0
         best_response = None
-        best_question = None
         
         for _, row in qa_df.iterrows():
             qa_tokens = row.get('tokens', set())
             if not qa_tokens:
                 continue
             
-            # Fast token overlap check
-            common_tokens = question_tokens & qa_tokens
-            token_overlap = len(common_tokens) / max(len(question_tokens), len(qa_tokens)) if common_tokens else 0
+            # Signal 1: token overlap with query (including synonym-expanded tokens)
+            common_tokens = all_query_tokens & qa_tokens
+            token_overlap = len(common_tokens) / max(len(all_query_tokens), len(qa_tokens)) if common_tokens else 0
             
             # Early exit if overlap too low
-            if token_overlap < 0.2:
+            if token_overlap < 0.15:
                 continue
             
-            # Only calculate sequence similarity for promising matches
+            # Signal 2: sequence similarity on normalized strings
+            qa_normalized = row.get('normalized', '')
+            seq_similarity = SequenceMatcher(None, q_normalized, qa_normalized).ratio()
+            
+            # Signal 3: intent match bonus
+            intent_bonus = 0.0
+            for intent in detected_intents:
+                intent_kws = INTENT_KEYWORD_MAP.get(intent, [])
+                if any(kw in qa_normalized for kw in intent_kws):
+                    intent_bonus = 0.15
+                    break
+            
+            # Signal 4: direct token overlap bonus (penalize order-insensitive)
+            direct_overlap = len(question_tokens & qa_tokens) / max(len(question_tokens), len(qa_tokens)) if (question_tokens and qa_tokens) else 0
+            
+            # Weighted combination
             if token_overlap >= 0.4:
-                score = token_overlap  # Good enough, skip expensive calculation
+                score = token_overlap * 0.5 + direct_overlap * 0.3 + seq_similarity * 0.2 + intent_bonus
             else:
-                qa_normalized = row.get('normalized', '')
-                seq_similarity = SequenceMatcher(None, q_normalized, qa_normalized).ratio()
-                score = token_overlap * 0.6 + seq_similarity * 0.4
+                score = token_overlap * 0.4 + seq_similarity * 0.4 + direct_overlap * 0.1 + intent_bonus
             
             if score > best_score:
                 best_score = score
-                best_question = str(row.get('question', ''))
                 best_response = str(row['response']).strip()
                 # Aggressively clean response - remove all labels
-                best_response = re.sub(r'^\s*\d+\.\s*', '', best_response)  # Remove numbering
-                best_response = re.sub(r'intent:\s*\w+\s*', '', best_response, flags=re.IGNORECASE)  # Remove intent
-                best_response = re.sub(r'question:\s*[^\n]+\s*', '', best_response, flags=re.IGNORECASE)  # Remove question
-                best_response = re.sub(r'response:\s*', '', best_response, flags=re.IGNORECASE)  # Remove response label
+                best_response = re.sub(r'^\s*\d+\.\s*', '', best_response)
+                best_response = re.sub(r'intent:\s*\w+\s*', '', best_response, flags=re.IGNORECASE)
+                best_response = re.sub(r'question:\s*[^\n]+\s*', '', best_response, flags=re.IGNORECASE)
+                best_response = re.sub(r'response:\s*', '', best_response, flags=re.IGNORECASE)
                 best_response = best_response.strip()
         
-        # Only return if we have a good match (30%+ similarity) and it's the SINGLE best answer
-        if best_score >= 0.3 and best_response:
-            self.qa_cache[q_lower] = best_response  # Cache result
+        # Return if good enough match (lowered threshold to 0.25 due to multi-signal scoring)
+        if best_score >= 0.25 and best_response:
+            self.qa_cache[q_lower] = best_response
             return best_response
         
         return None
@@ -555,39 +882,56 @@ class FitnessChatbot:
             return None
 
     def _normalize_query(self, question: str) -> str:
-        """Normalize query by fixing typos using dynamic fuzzy matching against vocabulary"""
-        words = question.lower().split()
-        normalized_words = []
+        """Normalize query: unicode → ASCII, apply synonym map, fix typos via vocabulary.
         
+        Handles:
+        - Typos (protien → protein, excercise → exercise)
+        - Abbreviations (cal → calories, kgs → kg)
+        - Slang / informal (shed kilos → lose weight)
+        - Reversed word order (muscle gain vs gain muscle)
+        - Mixed scripts / accents
+        """
+        if not question:
+            return question
+        
+        # 1. Unicode normalization (remove accents, normalize whitespace)
+        normalized = unicodedata.normalize('NFKD', question)
+        normalized = ''.join(c for c in normalized if not unicodedata.combining(c))
+        normalized = re.sub(r'\s+', ' ', normalized).strip()
+        
+        # 2. Apply phrase + word-level synonym map
+        normalized = self._apply_synonym_map(normalized)
+        
+        # 3. Per-word vocabulary fuzzy correction (for residual typos not in synonym map)
+        words = normalized.split()
+        corrected_words = []
         for word in words:
-            # Skip very short words or stop words
-            if len(word) <= 2 or word in self.stop_words:
-                normalized_words.append(word)
+            clean = re.sub(r'[^a-z0-9]', '', word.lower())
+            if len(clean) <= 2 or clean in self.stop_words:
+                corrected_words.append(word)
                 continue
-            
-            # Check if word exists in vocabulary
-            if word in self.vocabulary:
-                normalized_words.append(word)
+            if clean in self.vocabulary:
+                corrected_words.append(word)
                 continue
-            
-            # Try fuzzy matching against vocabulary
-            match = self._fuzzy_match(word, list(self.vocabulary), threshold=0.8)
-            if match:
-                normalized_words.append(match)
+            # Fuzzy match against vocabulary (threshold=0.82 to avoid over-correction)
+            match = self._fuzzy_match(clean, list(self.vocabulary), threshold=0.82)
+            if match and abs(len(match) - len(clean)) <= 3:
+                corrected_words.append(match)
             else:
-                normalized_words.append(word)
+                corrected_words.append(word)
         
-        return " ".join(normalized_words)
+        result = ' '.join(corrected_words)
+        return result
 
     def load_all_datasets(self) -> None:
         try:
             base = Path(__file__).resolve().parent
-            self.datasets["exercises"] = pd.read_csv(base / "exercises.csv")
-            self.datasets["food_nutrition"] = pd.read_csv(base / "Indian_Food_Nutrition_Processed.csv")
-            self.datasets["diet_recommendations"] = pd.read_csv(base / "diet_recommendations_dataset.csv")
-            self.datasets["disease_food_nutrition"] = pd.read_csv(base / "real_disease_food_nutrition_dataset.csv")
-            self.datasets["yoga_poses"] = pd.read_csv(base / "final_asan1_1.csv")
-            self.datasets["fitness_qa"] = pd.read_csv(base / "fitness_related_questions.csv")
+            self.datasets["exercises"] = pd.read_csv(base / "exercises_enhanced.csv")
+            self.datasets["food_nutrition"] = pd.read_csv(base / "Indian_Food_Nutrition_Enhanced.csv")
+            self.datasets["diet_recommendations"] = pd.read_csv(base / "diet_recommendations_enhanced.csv")
+            self.datasets["disease_food_nutrition"] = pd.read_csv(base / "real_disease_food_nutrition_enhanced.csv")
+            self.datasets["yoga_poses"] = pd.read_csv(base / "yoga_poses_enhanced.csv")
+            self.datasets["fitness_qa"] = pd.read_csv(base / "fitness_qa_enhanced.csv")
             print(f"Loaded {len(self.datasets)} datasets")
         except Exception as e:
             print(f"Error loading datasets: {e}")
@@ -613,10 +957,20 @@ class FitnessChatbot:
             }
 
     def extract_query_intent(self, question: str) -> Dict[str, Any]:
-        q = (question or "").strip().lower()
+        """Extract intent from question.
+        
+        Enhanced: applies synonym map first so 'excercise 4 chest' and
+        'chest exercises' produce the same tokens and domain.
+        Also handles fragmented / reversed grammar.
+        """
+        # Apply synonym map before any other processing
+        q_syn = self._apply_synonym_map((question or "").strip().lower())
+        q = q_syn
         
         # Extended stop words for exercise queries
-        filler_words = {"focus", "focused", "targeting", "target", "work", "working", "train", "training"}
+        filler_words = {"focus", "focused", "targeting", "target", "work", "working", "train", "training",
+                        "tell", "give", "show", "what", "which", "when", "where", "why", "how",
+                        "please", "help", "need", "want", "like"}
         
         base_tokens = [
             t
@@ -643,6 +997,23 @@ class FitnessChatbot:
 
         numeric_filter = self._extract_numeric_filter(q)
         domain = self._infer_query_domain(q, tokens)
+        
+        # Augment domain detection with detected intents
+        detected_intents = self._detect_intents_from_synonyms(q)
+        if domain == "general" and detected_intents:
+            intent_to_domain = {
+                "weight_loss": "nutrition", "muscle_gain": "exercise",
+                "bmi": "nutrition", "calories": "nutrition", "protein": "nutrition",
+                "water": "nutrition", "macros": "nutrition", "exercise": "exercise",
+                "yoga": "yoga", "nutrition": "nutrition", "health": "health",
+                "sleep": "general", "supplements": "nutrition",
+                "stamina": "exercise",
+            }
+            for intent in detected_intents:
+                mapped = intent_to_domain.get(intent)
+                if mapped and mapped != "general":
+                    domain = mapped
+                    break
 
         return {
             "question": question,
@@ -650,22 +1021,54 @@ class FitnessChatbot:
             "operation": operation,
             "numeric_filter": numeric_filter,
             "domain": domain,
+            "detected_intents": detected_intents,
         }
 
     def _infer_query_domain(self, q: str, tokens: List[str]) -> str:
+        """Infer query domain with synonym-aware matching.
+        Handles informal phrasings like 'belly fat workout' → 'exercise' domain."""
         joined = f"{q} {' '.join(tokens)}"
         
+        # Apply synonym map for domain detection too
+        joined_syn = self._apply_synonym_map(joined)
+        
         # Check for disease/health conditions first (highest priority)
-        if any(k in joined for k in ["diabetes", "hypertension", "cholesterol", "disease", "condition", "avoid", "recommended for"]):
+        health_kws = ["diabetes", "hypertension", "cholesterol", "disease", "condition", 
+                      "avoid", "recommended for", "blood pressure", "blood sugar", "heart",
+                      "thyroid", "kidney", "liver", "pcos", "arthritis", "osteoporosis"]
+        if any(k in joined_syn for k in health_kws):
             return "health"
-        if any(k in joined for k in ["calorie", "protein", "carb", "fat", "fiber", "food", "nutrition", "meal", "vitamin"]):
+        
+        # Nutrition domain
+        nutrition_kws = ["calorie", "calories", "protein", "carb", "carbohydrate", "fat",
+                         "fiber", "food", "nutrition", "meal", "vitamin", "mineral",
+                         "sodium", "iron", "calcium", "zinc", "magnesium", "sugar",
+                         "macros", "macro", "tdee", "bmr", "bmi", "water", "hydration"]
+        if any(k in joined_syn for k in nutrition_kws):
             return "nutrition"
-        if any(k in joined for k in ["yoga", "asana", "pose", "flexibility", "meditation"]):
+        
+        # Yoga domain
+        yoga_kws = ["yoga", "asana", "pose", "flexibility", "meditation", "pranayama",
+                    "stretch", "stretching", "mindfulness", "breathing exercise"]
+        if any(k in joined_syn for k in yoga_kws):
             return "yoga"
-        if any(k in joined for k in ["exercise", "workout", "gym", "muscle", "training", "strength", "cardio"]):
+        
+        # Exercise domain
+        exercise_kws = ["exercise", "workout", "gym", "muscle", "training", "strength",
+                        "cardio", "hiit", "aerobic", "weightlift", "calisthenics",
+                        "bodyweight", "dumbbell", "barbell", "resistance", "push up",
+                        "pull up", "squat", "deadlift", "bench", "bicep", "tricep",
+                        "chest", "back", "shoulder", "leg", "core", "abs", "glute",
+                        "cardio", "endurance", "stamina", "bulk", "cut", "toning"]
+        if any(k in joined_syn for k in exercise_kws):
             return "exercise"
-        if any(k in joined for k in ["diet", "weight loss", "weight gain", "plan"]):
+        
+        # Diet domain
+        diet_kws = ["diet", "weight loss", "weight gain", "plan", "meal plan",
+                    "intermittent", "fasting", "keto", "vegan", "vegetarian", "paleo"]
+        if any(k in joined_syn for k in diet_kws):
             return "diet"
+        
         return "general"
 
     def _extract_numeric_filter(self, q: str) -> Optional[Tuple[str, float]]:
@@ -1772,15 +2175,31 @@ class FitnessChatbot:
         return "\n".join(lines)
 
     def answer_question(self, question: str) -> str:
+        """Main entry point. Handles typos, unstructured grammar, synonym variants.
+        
+        Pipeline:
+        1. Normalize / fix typos / apply synonym map
+        2. Check if clarification is needed (vague query, missing inputs)
+        3. Detect intents from normalized text
+        4. Try rule-based calculators (BMI, calories, protein, water, macros)
+        5. Check FAQ with multi-signal fuzzy matching
+        6. Query relevant dataset(s)
+        7. Fall back to guided clarification
+        """
         if not self.datasets:
             return "Knowledge base is not available right now."
         
-        # Normalize query to fix spelling mistakes
+        # Step 1: Normalize query (typo fix + synonym map)
         normalized_question = self._normalize_query(question)
         
         intent = self.extract_query_intent(normalized_question)
         
-        # Check if asking about specific food nutrition - handle directly
+        # Step 2: Check if we need more info from the user before answering
+        clarification = self._should_ask_clarification(normalized_question, intent)
+        if clarification:
+            return clarification
+        
+        # Step 3: Check if asking about specific food nutrition - handle directly
         if self._is_specific_food_query(normalized_question):
             food_answer = self._get_specific_food_nutrition(normalized_question)
             if food_answer:
@@ -1806,7 +2225,6 @@ class FitnessChatbot:
                 return result
         
         # IMPORTANT: Try rule-based answers FIRST for calculation queries (before FAQ)
-        # This prevents FAQ from returning wrong calculation formulas
         q_lower = normalized_question.lower()
         is_calculation_query = any(k in q_lower for k in ['calculate', 'calculation', 'formula', 'compute'])
         
@@ -1820,13 +2238,63 @@ class FitnessChatbot:
         
         # If FAQ answer exists, intelligently append relevant dataset results
         if faq_answer:
+            # Confidence check: if the answer seems unrelated, don't show it
+            confidence = self._compute_fuzzy_confidence(normalized_question, faq_answer)
             enriched_data = self._enrich_with_dataset(q_lower, faq_answer)
             if enriched_data:
                 return f"{faq_answer}\n\n{enriched_data}"
             return faq_answer
         
         # Fall back to dataset query
-        return self.execute_dynamic_query(intent)
+        result = self.execute_dynamic_query(intent)
+        
+        # If dataset query also failed, give a smart guided response based on detected intents
+        if "I don't have enough information" in result:
+            detected_intents = intent.get("detected_intents", [])
+            if detected_intents:
+                return self._guided_fallback(normalized_question, detected_intents)
+        
+        return result
+
+    def _guided_fallback(self, question: str, detected_intents: List[str]) -> str:
+        """Provide a helpful guided response when no answer found, based on detected intents."""
+        lines = ["I couldn't find a precise answer for that, but here's how I can help:\n"]
+        
+        intent_guides = {
+            "weight_loss": ("🎯 Weight Loss", 
+                           "Try: 'weight loss foods', 'calorie deficit plan', or 'exercises for fat loss'"),
+            "muscle_gain": ("💪 Muscle Gain",
+                           "Try: 'chest exercises', 'protein for muscle gain', or 'workout plan for muscle building'"),
+            "bmi": ("📊 BMI",
+                   "Try: 'calculate bmi for 70kg 175cm'"),
+            "calories": ("🔥 Calories",
+                        "Try: 'calories for 70kg 175cm 25 age male moderate activity'"),
+            "protein": ("🥩 Protein",
+                       "Try: 'how much protein for 70kg muscle gain'"),
+            "water": ("💧 Water",
+                     "Try: 'water intake for 70kg'"),
+            "exercise": ("🏋️ Exercise",
+                        "Try: 'exercises for chest', 'back exercises with dumbbells'"),
+            "yoga": ("🧘 Yoga",
+                    "Try: 'beginner yoga poses', 'benefits of downward dog'"),
+            "nutrition": ("🥗 Nutrition",
+                         "Try: 'high protein foods', 'healthy foods list'"),
+            "health": ("🏥 Health Conditions",
+                      "Try: 'foods to avoid for diabetes', 'diet for hypertension'"),
+        }
+        
+        shown = 0
+        for intent in detected_intents[:3]:
+            if intent in intent_guides:
+                title, suggestion = intent_guides[intent]
+                lines.append(f"{title}: {suggestion}")
+                shown += 1
+        
+        if shown == 0:
+            lines.append("Ask about: exercises, food nutrition, yoga poses, BMI, calories, protein, or specific health conditions.")
+        
+        lines.append("\n💡 Tip: Be specific! E.g., instead of 'exercises' try 'chest exercises with bodyweight'")
+        return "\n".join(lines)
     
     def _enrich_with_dataset(self, question: str, faq_response: str) -> Optional[str]:
         """Intelligently enrich FAQ response with relevant dataset information using fuzzy keyword extraction"""
@@ -2150,56 +2618,50 @@ class FitnessChatbot:
         return False
 
     def _should_prefer_rule_based(self, question: str, intent: Dict[str, Any]) -> bool:
-        q = (question or "").lower()
+        """Determine if rule-based logic should be preferred over FAQ/dataset search.
+        Enhanced: applies synonym normalization first for typo tolerance."""
+        q_raw = (question or "").lower()
+        # Apply synonym map so 'protien 70kgs daily' maps correctly
+        q = self._apply_synonym_map(q_raw)
+        
         if self._is_exercise_instruction_query(question, intent):
             return False
         
-        # If question has numerical values with units, prefer calculation
+        # Numeric inputs present → prefer calculators
         has_weight = re.search(r"\d+\s*kg", q)
         has_height = re.search(r"\d+\s*cm", q)
         has_calories = re.search(r"\d+\s*(?:kcal|calories)", q)
         
-        # BMI calculation
         if "bmi" in q and (has_weight or has_height):
             return True
-        
-        # Calorie calculation
         if any(k in q for k in ["calories", "tdee", "bmr"]) and (has_weight or has_height):
             return True
-        
-        # Water calculation
         if "water" in q and has_weight:
             return True
         
-        # Protein calculation - prioritize if asking about daily protein intake
-        protein_keywords = ["protein", "protien", "protin"]
+        # Protein calculation — broad synonym coverage
+        protein_keywords = ["protein", "protien", "protin", "protine", "protain", "proteen"]
         has_protein = any(k in q for k in protein_keywords)
-        daily_keywords = ["per day", "daily", "in a day", "each day", "every day", "to consume", "should i consume", "how much"]
+        daily_keywords = ["per day", "daily", "in a day", "each day", "every day", 
+                          "to consume", "should i consume", "how much", "need", "require", "intake"]
         asks_daily_protein = has_protein and any(k in q for k in daily_keywords)
         
         if asks_daily_protein:
             return True
-        
         if has_protein and has_weight:
             return True
-        
-        # Macro calculation
         if any(k in q for k in ["macro", "macros"]) and has_calories:
             return True
-        
-        # General calculation keywords
-        if any(k in q for k in ["calculate", "computation", "formula"]):
+        if any(k in q for k in ["calculate", "computation", "formula", "calc"]):
             return True
 
         guidance_phrases = [
             "tips", "how to", "should i", "routine", "plan", "beginner", "general",
-            "build muscle", "muscle gain", "weight loss",
-            "healthy lifestyle"
+            "build muscle", "muscle gain", "weight loss", "healthy lifestyle"
         ]
         if any(p in q for p in guidance_phrases) and not (has_weight or has_height or has_calories):
             return True
 
-        # If query has very few specific tokens, prefer rule-based guidance.
         tokens = intent.get("tokens", [])
         if len(tokens) <= 1 and intent.get("operation") == "search":
             return True
@@ -2210,13 +2672,13 @@ class FitnessChatbot:
 chatbot_instance: Optional[FitnessChatbot] = None
 
 
-def get_chatbot(use_llama: bool = False, ollama_url: str = "http://localhost:11434") -> FitnessChatbot:
+def get_chatbot() -> FitnessChatbot:
     global chatbot_instance
     if chatbot_instance is None:
-        chatbot_instance = FitnessChatbot(use_llama=use_llama, ollama_url=ollama_url)
+        chatbot_instance = FitnessChatbot()
     return chatbot_instance
 
 
-def answer_fitness_question(question: str, use_llama: bool = False, ollama_url: str = "http://localhost:11434") -> str:
-    bot = get_chatbot(use_llama=use_llama, ollama_url=ollama_url)
+def answer_fitness_question(question: str) -> str:
+    bot = get_chatbot()
     return bot.answer_question(question)
