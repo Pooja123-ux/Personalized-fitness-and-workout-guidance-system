@@ -75,6 +75,10 @@ SYNONYM_MAP: Dict[str, str] = {
     "weigh loss": "weight loss", "fat loss": "weight loss",
     "loose weight": "lose weight", "loosing weight": "losing weight",
     "shed weight": "lose weight", "slim down": "lose weight",
+    "how long to workout": "how long should a workout be",
+    "how long to exercise": "how long should a workout be",
+    "workout for how long": "how long should a workout be",
+    "exercise for how long": "how long should a workout be",
     # --- health conditions ---
     "diabeties": "diabetes", "diabetis": "diabetes", "diebetes": "diabetes",
     "hypertenshion": "hypertension", "hypertenstion": "hypertension",
@@ -350,12 +354,20 @@ class FitnessChatbot:
         qa_df = self.datasets.get("fitness_qa")
         if qa_df is None or qa_df.empty:
             return
+        if 'question' not in qa_df.columns or 'response' not in qa_df.columns:
+            return
         
         # Clean response column - remove intent, question, response labels
         if 'response' in qa_df.columns:
             qa_df['response'] = qa_df['response'].apply(
                 lambda x: re.sub(r'^(intent:|question:|response:)\s*', '', str(x), flags=re.IGNORECASE).strip()
             )
+        if 'intent' not in qa_df.columns:
+            qa_df['intent'] = 'general'
+        qa_df['intent'] = qa_df['intent'].fillna('general').astype(str).str.lower().str.strip()
+        qa_df['question'] = qa_df['question'].astype(str).str.strip()
+        qa_df['response'] = qa_df['response'].astype(str).str.strip()
+        qa_df = qa_df[(qa_df['question'] != '') & (qa_df['response'] != '')].copy()
         
         # Add preprocessed columns
         qa_df['normalized'] = qa_df['question'].apply(
@@ -364,6 +376,7 @@ class FitnessChatbot:
         qa_df['tokens'] = qa_df['normalized'].apply(
             lambda x: set([t for t in x.split() if t not in self.stop_words and len(t) > 2])
         )
+        self.datasets["fitness_qa"] = qa_df.reset_index(drop=True)
 
     def _infer_knowledge_from_datasets(self) -> None:
         """Dynamically infer knowledge patterns from all datasets using fuzzy logic"""
@@ -390,11 +403,79 @@ class FitnessChatbot:
             if yoga_df is not None and not yoga_df.empty:
                 knowledge['yoga'] = self._infer_yoga_patterns(yoga_df)
             
+            # Infer from QA dataset (general conversational fitness knowledge)
+            qa_df = self.datasets.get("fitness_qa")
+            if qa_df is not None and not qa_df.empty:
+                knowledge['qa'] = self._infer_qa_patterns(qa_df)
+            
             self.inferred_knowledge = knowledge
             print(f"Inferred knowledge from {len(knowledge)} dataset categories")
         except Exception as e:
             print(f"Error inferring knowledge: {e}")
             self.inferred_knowledge = {}
+
+    def _infer_qa_patterns(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Infer QA intent clusters and high-signal keywords from QA dataset."""
+        patterns: Dict[str, Any] = {"intents": {}, "keywords": {}}
+        if "intent" not in df.columns or "question" not in df.columns or "response" not in df.columns:
+            return patterns
+
+        grouped = df.groupby(df["intent"].fillna("general").astype(str).str.lower().str.strip())
+        for intent_name, grp in grouped:
+            questions = grp["question"].astype(str).tolist()
+            responses = grp["response"].astype(str).tolist()
+            token_bucket: List[str] = []
+            for q in questions:
+                qn = self._apply_synonym_map(re.sub(r"[^a-z0-9\s]", " ", q.lower()))
+                token_bucket.extend([t for t in qn.split() if len(t) > 2 and t not in self.stop_words])
+            top_keywords = [w for w, _ in Counter(token_bucket).most_common(15)]
+
+            patterns["intents"][intent_name] = {
+                "count": len(grp),
+                "sample_questions": questions[:5],
+                "sample_responses": responses[:5],
+                "top_keywords": top_keywords,
+            }
+            for kw in top_keywords:
+                patterns["keywords"].setdefault(kw, set()).add(intent_name)
+
+        patterns["keywords"] = {k: sorted(list(v)) for k, v in patterns["keywords"].items()}
+        return patterns
+
+    def _answer_from_inferred_qa(self, question: str) -> Optional[str]:
+        """Fallback to QA knowledge for typo-heavy / unstructured general questions."""
+        qa_df = self.datasets.get("fitness_qa")
+        if qa_df is None or qa_df.empty:
+            return None
+        if "question" not in qa_df.columns or "response" not in qa_df.columns:
+            return None
+
+        qn = self._apply_synonym_map(re.sub(r"[^a-z0-9\s]", " ", (question or "").lower()))
+        q_tokens = set([t for t in qn.split() if len(t) > 2 and t not in self.stop_words])
+        if not q_tokens:
+            return None
+
+        best_score = 0.0
+        best_response: Optional[str] = None
+        for _, row in qa_df.iterrows():
+            candidate_q = str(row.get("question", ""))
+            candidate_r = str(row.get("response", "")).strip()
+            if not candidate_q or not candidate_r:
+                continue
+            rn = self._apply_synonym_map(re.sub(r"[^a-z0-9\s]", " ", candidate_q.lower()))
+            r_tokens = set([t for t in rn.split() if len(t) > 2 and t not in self.stop_words])
+            if not r_tokens:
+                continue
+            overlap = len(q_tokens & r_tokens) / max(1, len(q_tokens | r_tokens))
+            seq = SequenceMatcher(None, qn, rn).ratio()
+            score = overlap * 0.7 + seq * 0.3
+            if score > best_score:
+                best_score = score
+                best_response = candidate_r
+
+        if best_score >= 0.28 and best_response:
+            return best_response
+        return None
 
     def _infer_nutrition_patterns(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Infer nutrition patterns and thresholds from food data"""
@@ -406,6 +487,7 @@ class FitnessChatbot:
             if any(nutrient in col_lower for nutrient in ['calorie', 'protein', 'fat', 'carb', 'fiber', 'sodium']):
                 numeric_vals = pd.to_numeric(df[col], errors='coerce').dropna()
                 if len(numeric_vals) > 0:
+                    numeric_vals = numeric_vals.astype(float)
                     patterns[col] = {
                         'median': float(numeric_vals.median()),
                         'q25': float(numeric_vals.quantile(0.25)),
@@ -418,6 +500,7 @@ class FitnessChatbot:
         if 'Calories (kcal)' in df.columns:
             cal_col = 'Calories (kcal)'
             cals = pd.to_numeric(df[cal_col], errors='coerce').dropna()
+            cals = cals.astype(float)
             patterns['categories'] = {
                 'very_low_cal': cals[cals < cals.quantile(0.2)].mean(),
                 'low_cal': cals[(cals >= cals.quantile(0.2)) & (cals < cals.quantile(0.4))].mean(),
@@ -931,7 +1014,30 @@ class FitnessChatbot:
             self.datasets["diet_recommendations"] = pd.read_csv(base / "diet_recommendations_enhanced.csv")
             self.datasets["disease_food_nutrition"] = pd.read_csv(base / "real_disease_food_nutrition_enhanced.csv")
             self.datasets["yoga_poses"] = pd.read_csv(base / "yoga_poses_enhanced.csv")
-            self.datasets["fitness_qa"] = pd.read_csv(base / "fitness_qa_enhanced.csv")
+            qa_frames: List[pd.DataFrame] = []
+            for qa_path in [base / "fitness_qa_enhanced.csv", base / "fitness_related_questions.csv"]:
+                if qa_path.exists():
+                    try:
+                        qa_frames.append(pd.read_csv(qa_path))
+                    except Exception:
+                        pass
+            if qa_frames:
+                qa_df = pd.concat(qa_frames, ignore_index=True)
+                qa_df.columns = [str(c).strip().lower() for c in qa_df.columns]
+                if "intent" not in qa_df.columns:
+                    qa_df["intent"] = "general"
+                if "question" not in qa_df.columns:
+                    qa_df["question"] = ""
+                if "response" not in qa_df.columns:
+                    qa_df["response"] = ""
+                qa_df = qa_df[["intent", "question", "response"]].dropna(subset=["question", "response"])
+                qa_df["question"] = qa_df["question"].astype(str).str.strip()
+                qa_df["response"] = qa_df["response"].astype(str).str.strip()
+                qa_df = qa_df[(qa_df["question"] != "") & (qa_df["response"] != "")]
+                qa_df = qa_df.drop_duplicates(subset=["question"], keep="first").reset_index(drop=True)
+                self.datasets["fitness_qa"] = qa_df
+            else:
+                self.datasets["fitness_qa"] = pd.DataFrame(columns=["intent", "question", "response"])
             print(f"Loaded {len(self.datasets)} datasets")
         except Exception as e:
             print(f"Error loading datasets: {e}")
@@ -1410,6 +1516,11 @@ class FitnessChatbot:
                 "Want me to calculate your specific protein target? Share your weight and goal!"
             )
 
+        if any(k in q for k in ["fruit", "fruits"]) and any(k in q for k in ["weight loss", "lose weight", "fat loss"]):
+            fruit_answer = self._get_weight_loss_fruits()
+            if fruit_answer:
+                return fruit_answer
+
         if any(k in q for k in ["calorie deficit", "fat loss", "weight loss"]):
             return (
                 "🎯 Weight Loss Tips:\n\n"
@@ -1442,6 +1553,21 @@ class FitnessChatbot:
                 "- 1-2 active recovery days (walking, yoga)\n"
                 "- Progressive increase in intensity\n\n"
                 "Ask me about specific exercises for any muscle group!"
+            )
+
+        if any(k in q for k in [
+            "how long should a workout be",
+            "how long should i workout",
+            "how long workout",
+            "workout duration",
+            "duration of workout",
+            "how many minutes workout",
+            "how much time workout",
+            "workout time",
+        ]):
+            return (
+                "A typical workout is 45-60 minutes. Quality matters more than duration.\n"
+                "Even 30-minute focused sessions are effective, and very long workouts (2+ hours) are usually unnecessary for most people."
             )
 
         if any(k in q for k in ["exercise", "workout", "training", "gym"]) and domain == "exercise":
@@ -1597,6 +1723,88 @@ class FitnessChatbot:
             return "\n".join(lines)
         except Exception:
             return None
+
+    def _get_weight_loss_fruits(self) -> Optional[str]:
+        """Infer good fruit options for weight loss from food dataset (not hardcoded tips)."""
+        food_df = self.datasets.get("food_nutrition")
+        if food_df is None or food_df.empty:
+            return None
+
+        # Identify columns dynamically
+        food_col = 'Dish Name' if 'Dish Name' in food_df.columns else food_df.columns[0]
+        cal_col = next((c for c in food_df.columns if 'calorie' in c.lower() or 'kcal' in c.lower()), None)
+        fiber_col = next((c for c in food_df.columns if 'fibre' in c.lower() or 'fiber' in c.lower()), None)
+        sugar_col = next((c for c in food_df.columns if 'free sugar' in c.lower() or 'sugar' in c.lower()), None)
+        prot_col = next((c for c in food_df.columns if 'protein' in c.lower()), None)
+        weight_loss_flag_col = next((c for c in food_df.columns if c.lower() == 'suitable_for_weight_loss'), None)
+        low_cal_flag_col = next((c for c in food_df.columns if c.lower() == 'is_low_calorie'), None)
+        kw_col = 'search_keywords' if 'search_keywords' in food_df.columns else None
+
+        if cal_col is None:
+            return None
+
+        df = food_df.copy()
+        df[cal_col] = pd.to_numeric(df[cal_col], errors='coerce')
+        if fiber_col:
+            df[fiber_col] = pd.to_numeric(df[fiber_col], errors='coerce')
+        if sugar_col:
+            df[sugar_col] = pd.to_numeric(df[sugar_col], errors='coerce')
+        if prot_col:
+            df[prot_col] = pd.to_numeric(df[prot_col], errors='coerce')
+
+        # Infer "fruit-like" rows from names + keywords
+        fruit_regex = r"\b(?:fruit|apple|banana|orange|mango|papaya|guava|berry|grape|melon|pomegranate|pineapple|lemon)\b"
+        mask_name = df[food_col].astype(str).str.contains(fruit_regex, case=False, na=False, regex=True)
+        mask_kw = df[kw_col].astype(str).str.contains(r"\bfruit\b", case=False, na=False, regex=True) if kw_col else False
+        mask = mask_name | mask_kw
+        candidates = df[mask].copy()
+        if candidates.empty:
+            return None
+
+        # Score using dataset fields
+        cal_median = pd.to_numeric(df[cal_col], errors='coerce').dropna().median()
+        if not np.isfinite(cal_median) or cal_median <= 0:
+            cal_median = 150.0
+
+        candidates['score'] = 0.0
+        candidates['score'] += (1.0 - (candidates[cal_col].fillna(cal_median) / max(1.0, cal_median))).clip(-1.0, 1.0)
+        if fiber_col:
+            fiber_median = pd.to_numeric(df[fiber_col], errors='coerce').dropna().median()
+            if np.isfinite(fiber_median) and fiber_median > 0:
+                candidates['score'] += (candidates[fiber_col].fillna(0) / fiber_median).clip(0.0, 2.0) * 0.8
+        if sugar_col:
+            sugar_median = pd.to_numeric(df[sugar_col], errors='coerce').dropna().median()
+            if np.isfinite(sugar_median) and sugar_median > 0:
+                candidates['score'] -= (candidates[sugar_col].fillna(sugar_median) / sugar_median).clip(0.0, 2.0) * 0.4
+        if prot_col:
+            prot_median = pd.to_numeric(df[prot_col], errors='coerce').dropna().median()
+            if np.isfinite(prot_median) and prot_median > 0:
+                candidates['score'] += (candidates[prot_col].fillna(0) / prot_median).clip(0.0, 2.0) * 0.2
+        if weight_loss_flag_col:
+            candidates['score'] += candidates[weight_loss_flag_col].astype(str).str.lower().isin(['true', '1', 'yes']).astype(float) * 1.2
+        if low_cal_flag_col:
+            candidates['score'] += candidates[low_cal_flag_col].astype(str).str.lower().isin(['true', '1', 'yes']).astype(float) * 0.8
+
+        top = candidates.sort_values(by='score', ascending=False).head(8)
+        if top.empty:
+            return None
+
+        lines = ["Fruit options from dataset that are more weight-loss friendly:\n"]
+        for i, (_, row) in enumerate(top.iterrows(), 1):
+            name = str(row.get(food_col, 'Unknown')).strip()
+            cal = row.get(cal_col, np.nan)
+            fib = row.get(fiber_col, np.nan) if fiber_col else np.nan
+            sug = row.get(sugar_col, np.nan) if sugar_col else np.nan
+            meta = []
+            if pd.notna(cal):
+                meta.append(f"{int(round(float(cal)))} kcal")
+            if pd.notna(fib):
+                meta.append(f"{float(fib):.1f}g fiber")
+            if pd.notna(sug):
+                meta.append(f"{float(sug):.1f}g sugar")
+            lines.append(f"{i}. {name}" + (f" ({', '.join(meta)})" if meta else ""))
+        lines.append("\nTip: prefer lower-calorie, higher-fiber choices and portion control.")
+        return "\n".join(lines)
 
     def _intelligent_exercise_recommendation(self, query: str) -> Optional[str]:
         """Use inferred exercise patterns to recommend exercises intelligently"""
@@ -2227,6 +2435,22 @@ class FitnessChatbot:
         # IMPORTANT: Try rule-based answers FIRST for calculation queries (before FAQ)
         q_lower = normalized_question.lower()
         is_calculation_query = any(k in q_lower for k in ['calculate', 'calculation', 'formula', 'compute'])
+        detected_intents = intent.get("detected_intents", [])
+        asks_food_list = any(k in q_lower for k in [
+            "low calorie foods", "high protein foods", "foods for", "best foods",
+            "foods to eat", "food items", "list of foods", "which foods"
+        ])
+        is_general_guidance_query = bool(detected_intents) and any(i in detected_intents for i in [
+            "weight_loss", "muscle_gain", "nutrition", "health", "stamina", "sleep"
+        ]) and not asks_food_list
+
+        if is_general_guidance_query:
+            rule_answer = self._rule_based_general_answer(normalized_question, intent)
+            if rule_answer:
+                return rule_answer
+            inferred_answer = self._answer_from_inferred_qa(normalized_question)
+            if inferred_answer:
+                return inferred_answer
         
         if is_calculation_query or self._should_prefer_rule_based(normalized_question, intent):
             rule_answer = self._rule_based_general_answer(normalized_question, intent)
@@ -2244,6 +2468,10 @@ class FitnessChatbot:
             if enriched_data:
                 return f"{faq_answer}\n\n{enriched_data}"
             return faq_answer
+
+        inferred_answer = self._answer_from_inferred_qa(normalized_question)
+        if inferred_answer:
+            return inferred_answer
         
         # Fall back to dataset query
         result = self.execute_dynamic_query(intent)

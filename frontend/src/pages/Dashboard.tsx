@@ -679,6 +679,11 @@ export default function Dashboard() {
 
   const baseWeight = progressList.length > 0 ? Number(progressList[0].weight_kg || profile.weight_kg) : Number(profile.weight_kg);
   const currentWeight = Number(profile.weight_kg || 0);
+  const historicalWeights = progressList
+    .map((p: any) => Number(p?.weight_kg || 0))
+    .filter((w: number) => Number.isFinite(w) && w > 0);
+  const highestHistoricalWeight = historicalWeights.length ? Math.max(...historicalWeights, currentWeight) : currentWeight;
+  const lowestHistoricalWeight = historicalWeights.length ? Math.min(...historicalWeights, currentWeight) : currentWeight;
   const idealWeightKg = Number((22 * heightMeters * heightMeters).toFixed(1));
   const fatLossRemainingKg = Math.max(0, currentWeight - idealWeightKg);
   const muscleTargetWeight = Number((baseWeight + 3).toFixed(1));
@@ -708,6 +713,32 @@ export default function Dashboard() {
       if (weeks >= 8) return `${Math.ceil(weeks / 4)} month(s)`;
       return `${weeks} week(s)`;
     };
+    const buildMonthlyProjection = (startWeight: number, targetWeight: number, etaWeeks: number) => {
+      const etaMonths = etaWeeks <= 0 ? 0 : Math.max(1, Math.min(12, Math.ceil(etaWeeks / 4)));
+      const totalSteps = Math.max(1, etaMonths);
+      const deltaPerStep = (targetWeight - startWeight) / totalSteps;
+      const points: Array<{ label: string; weight: number }> = [];
+      const monthFmt = new Intl.DateTimeFormat('en-US', { month: 'short' });
+      const now = new Date();
+
+      points.push({ label: monthFmt.format(now), weight: Number(startWeight.toFixed(1)) });
+      for (let i = 1; i <= etaMonths; i += 1) {
+        const projected = startWeight + deltaPerStep * i;
+        const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+        points.push({ label: monthFmt.format(d), weight: Number(projected.toFixed(1)) });
+      }
+      if (points.length === 1) {
+        const d = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+        points.push({ label: monthFmt.format(d), weight: Number(targetWeight.toFixed(1)) });
+      }
+      return points;
+    };
+    const fatLossStartWeight = Math.max(currentWeight, baseWeight, highestHistoricalWeight);
+    const fatLossTotalGap = Math.max(0.1, fatLossStartWeight - idealWeightKg);
+    const fatLossProgressPct = Math.max(0, Math.min(100, ((fatLossTotalGap - fatLossRemainingKg) / fatLossTotalGap) * 100));
+    const muscleGainStartWeight = Math.min(currentWeight, baseWeight, lowestHistoricalWeight);
+    const muscleGainTotalGap = Math.max(0.1, muscleTargetWeight - muscleGainStartWeight);
+    const muscleGainProgressPct = Math.max(0, Math.min(100, ((muscleGainTotalGap - muscleGainRemainingKg) / muscleGainTotalGap) * 100));
     if (activeGoalFatLoss && !activeGoalMuscleGain) {
       return [
         {
@@ -715,7 +746,9 @@ export default function Dashboard() {
           title: 'Fat Loss',
           targetText: `Target ${idealWeightKg.toFixed(1)} kg | Current ${currentWeight.toFixed(1)} kg`,
           remainingText: `Remaining ${fatLossRemainingKg.toFixed(1)} kg`,
-          etaText: etaLabel(fatLossEtaWeeks)
+          etaText: etaLabel(fatLossEtaWeeks),
+          progressPct: fatLossProgressPct,
+          monthlyProjection: buildMonthlyProjection(currentWeight, idealWeightKg, fatLossEtaWeeks)
         }
       ];
     }
@@ -726,7 +759,9 @@ export default function Dashboard() {
           title: 'Muscle Gain',
           targetText: `Target ${muscleTargetWeight.toFixed(1)} kg | Current ${currentWeight.toFixed(1)} kg`,
           remainingText: `Remaining ${muscleGainRemainingKg.toFixed(1)} kg`,
-          etaText: etaLabel(muscleEtaWeeks)
+          etaText: etaLabel(muscleEtaWeeks),
+          progressPct: muscleGainProgressPct,
+          monthlyProjection: buildMonthlyProjection(currentWeight, muscleTargetWeight, muscleEtaWeeks)
         }
       ];
     }
@@ -736,7 +771,9 @@ export default function Dashboard() {
         title: 'Fat Loss',
         targetText: `Target ${idealWeightKg.toFixed(1)} kg | Current ${currentWeight.toFixed(1)} kg`,
         remainingText: `Remaining ${fatLossRemainingKg.toFixed(1)} kg`,
-        etaText: etaLabel(fatLossEtaWeeks)
+        etaText: etaLabel(fatLossEtaWeeks),
+        progressPct: fatLossProgressPct,
+        monthlyProjection: buildMonthlyProjection(currentWeight, idealWeightKg, fatLossEtaWeeks)
       }
     ];
   })();
@@ -808,6 +845,18 @@ export default function Dashboard() {
 
     return reminders;
   })();
+
+  useEffect(() => {
+    try {
+      const alertPayload = smartAlerts.map((a) => ({ severity: a.severity, message: a.message }));
+      const reminderPayload = dailyReminders.map((r) => ({ type: r.type, message: r.message, status: r.status }));
+      localStorage.setItem('dashboard_alerts_v1', JSON.stringify(alertPayload));
+      localStorage.setItem('dashboard_reminders_v1', JSON.stringify(reminderPayload));
+      window.dispatchEvent(new Event('dashboard-signals-updated'));
+    } catch {
+      // ignore storage sync errors
+    }
+  }, [smartAlerts, dailyReminders]);
 
   const highlightAlertMessage = (message: string) => {
     const keywordTerms = [
@@ -1091,26 +1140,6 @@ export default function Dashboard() {
             </p>
           </section>
 
-          <section className="card goal-progress-card">
-            <div className="card-header">
-              <h3>Goal Progress</h3>
-              <span className="badge">Active</span>
-            </div>
-            <div className="goal-grid">
-              {goalWidgets.map((goal) => (
-                <article key={goal.key} className="goal-item active">
-                  <div className="goal-head">
-                    <h4>{goal.title}</h4>
-                    <span className="goal-badge">Active</span>
-                  </div>
-                  <div className="goal-line">{goal.targetText}</div>
-                  <div className="goal-line">{goal.remainingText}</div>
-                  <div className="goal-eta">ETA: {goal.etaText}</div>
-                </article>
-              ))}
-            </div>
-          </section>
-
           <section className="card trend-card">
             <div className="card-header">
               <h3>Weekly Trends</h3>
@@ -1144,6 +1173,92 @@ export default function Dashboard() {
                   </article>
                 );
               })}
+            </div>
+          </section>
+        </div>
+
+        <div className="goal-row">
+          <section className="card goal-progress-card">
+            <div className="card-header">
+              <h3>Goal Progress</h3>
+              <span className="badge">Active</span>
+            </div>
+            <div className="goal-grid">
+              {goalWidgets.map((goal) => (
+                <article key={goal.key} className="goal-item active">
+                  <div className="goal-head">
+                    <h4>{goal.title}</h4>
+                    <span className="goal-badge">Active</span>
+                  </div>
+                  <div className="goal-line">{goal.targetText}</div>
+                  <div className="goal-line">{goal.remainingText}</div>
+                  <div className="goal-progress-rail">
+                    <div className="goal-progress-fill" style={{ width: `${goal.progressPct.toFixed(0)}%` }} />
+                  </div>
+                  <div className="goal-progress-meta">{goal.progressPct.toFixed(0)}% complete</div>
+                  <div className="goal-eta">ETA: {goal.etaText}</div>
+                  <div className="goal-chart-pane featured">
+                    <div className="goal-monthly-title">Weight Projection by Month</div>
+                    <div className="goal-mini-chart featured">
+                      <Line
+                        data={{
+                          labels: goal.monthlyProjection.map((point: { label: string; weight: number }) => point.label),
+                          datasets: [
+                            {
+                              label: 'Projected Weight',
+                              data: goal.monthlyProjection.map((point: { label: string; weight: number }) => point.weight),
+                              borderColor: '#22c55e',
+                              backgroundColor: 'rgba(34, 197, 94, 0.25)',
+                              borderWidth: 3,
+                              pointRadius: 4,
+                              pointHoverRadius: 6,
+                              pointBackgroundColor: '#ffffff',
+                              pointBorderColor: '#22c55e',
+                              pointBorderWidth: 2,
+                              tension: 0.35,
+                              fill: true
+                            }
+                          ]
+                        }}
+                        options={{
+                          responsive: true,
+                          maintainAspectRatio: false,
+                          plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                              callbacks: {
+                                label: (ctx) => `${Number(ctx.raw || 0).toFixed(1)} kg`
+                              }
+                            }
+                          },
+                          scales: {
+                            x: {
+                              grid: { color: 'rgba(148, 163, 184, 0.12)' },
+                              ticks: { color: '#fbbf24', font: { size: 11, weight: 700 } }
+                            },
+                            y: {
+                              grid: { color: 'rgba(148, 163, 184, 0.12)' },
+                              ticks: {
+                                color: '#6ee7b7',
+                                font: { size: 11, weight: 700 },
+                                callback: (val) => `${val} kg`
+                              }
+                            }
+                          }
+                        }}
+                      />
+                    </div>
+                    <div className="goal-projection-strip">
+                      {goal.monthlyProjection.map((point: { label: string; weight: number }, idx: number) => (
+                        <div key={`${goal.key}-pt-${idx}`} className="goal-projection-pill">
+                          <span className="projection-month">{point.label}</span>
+                          <span className="projection-weight">{point.weight.toFixed(1)} kg</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </article>
+              ))}
             </div>
           </section>
         </div>
@@ -1584,12 +1699,14 @@ const cssStyles = `
   display: grid;
   grid-template-columns: 1fr;
   gap: 24px;
+  order: 4;
 }
 
 .chart-row {
   display: grid;
   grid-template-columns: 1fr;
   gap: 24px;
+  order: 1;
 }
 
 .food-plan-content {
@@ -1607,8 +1724,16 @@ const cssStyles = `
 
 .middle-row {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
+  order: 2;
+}
+
+.goal-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
+  order: 3;
 }
 
 .bottom-row {
@@ -1617,19 +1742,33 @@ const cssStyles = `
   gap: 24px;
   width: 100%;
   max-width: 100%;
+  order: 5;
 }
 
 .alerts-card { margin-top: 0; }
 .alerts-list { display: grid; gap: 10px; }
 
 .consistency-card .card-header { margin-bottom: 14px; text-align: center; }
+.consistency-card {
+  background: linear-gradient(165deg, rgba(34, 197, 94, 0.14), rgba(14, 116, 144, 0.12));
+  border-color: rgba(45, 212, 191, 0.32);
+  box-shadow: 0 24px 34px -30px rgba(20, 184, 166, 0.38);
+}
+.consistency-card .card-header h3 {
+  color: #ccfbf1;
+}
+.consistency-card .badge {
+  background: rgba(45, 212, 191, 0.22);
+  color: #5eead4;
+}
 
 .compliance-score {
   font-size: 2rem;
   font-weight: 800;
-  color: var(--brand);
+  color: #5eead4;
   margin-bottom: 10px;
   text-align: center;
+  text-shadow: 0 0 22px rgba(45, 212, 191, 0.35);
 }
 
 .compliance-bar {
@@ -1643,7 +1782,7 @@ const cssStyles = `
 
 .compliance-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--brand), var(--accent));
+  background: linear-gradient(90deg, #2dd4bf, #22c55e);
 }
 
 .compliance-text {
@@ -1744,7 +1883,31 @@ const cssStyles = `
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   padding: 10px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.04);
+}
+.trend-card {
+  background: linear-gradient(160deg, rgba(59, 130, 246, 0.14), rgba(79, 70, 229, 0.14));
+  border-color: rgba(129, 140, 248, 0.35);
+  box-shadow: 0 24px 34px -30px rgba(79, 70, 229, 0.45);
+}
+.trend-card .card-header h3 {
+  color: #dbeafe;
+}
+.trend-card .badge {
+  background: rgba(129, 140, 248, 0.22);
+  color: #c7d2fe;
+}
+.trend-item:nth-child(1) { border-color: rgba(34, 197, 94, 0.36); background: rgba(34, 197, 94, 0.1); }
+.trend-item:nth-child(2) { border-color: rgba(249, 115, 22, 0.38); background: rgba(249, 115, 22, 0.1); }
+.trend-item:nth-child(3) { border-color: rgba(59, 130, 246, 0.38); background: rgba(59, 130, 246, 0.1); }
+.trend-item:nth-child(4) { border-color: rgba(168, 85, 247, 0.38); background: rgba(168, 85, 247, 0.1); }
+.trend-item:nth-child(1) .sparkline-bar { background: linear-gradient(180deg, #22c55e, #16a34a); }
+.trend-item:nth-child(2) .sparkline-bar { background: linear-gradient(180deg, #fb923c, #f97316); }
+.trend-item:nth-child(3) .sparkline-bar { background: linear-gradient(180deg, #60a5fa, #3b82f6); }
+.trend-item:nth-child(4) .sparkline-bar { background: linear-gradient(180deg, #c084fc, #a855f7); }
+.trend-item .sparkline-bar:hover {
+  filter: brightness(1.12);
+  transform: scaleY(1.12);
 }
 .trend-top {
   display: flex;
@@ -1801,18 +1964,31 @@ const cssStyles = `
 .goal-item {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
-  padding: 12px;
-  background: rgba(255, 255, 255, 0.03);
-  text-align: center;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  text-align: left;
+  overflow: hidden;
 }
 .goal-item.active {
-  border-color: rgba(16, 185, 129, 0.4);
-  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(74, 222, 128, 0.48);
+  background: linear-gradient(165deg, rgba(34, 197, 94, 0.18), rgba(20, 83, 45, 0.16));
+}
+.goal-progress-card {
+  background: linear-gradient(160deg, rgba(16, 185, 129, 0.16), rgba(5, 150, 105, 0.12));
+  border-color: rgba(52, 211, 153, 0.36);
+  box-shadow: 0 24px 36px -30px rgba(16, 185, 129, 0.5);
+}
+.goal-progress-card .card-header h3 {
+  color: #d1fae5;
+}
+.goal-progress-card .badge {
+  background: rgba(52, 211, 153, 0.22);
+  color: #a7f3d0;
 }
 .goal-head {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   margin-bottom: 6px;
   gap: 8px;
 }
@@ -1825,10 +2001,10 @@ const cssStyles = `
 .goal-badge {
   font-size: 0.62rem;
   text-transform: uppercase;
-  background: rgba(16, 185, 129, 0.2);
-  color: var(--brand);
+  background: rgba(74, 222, 128, 0.2);
+  color: #bbf7d0;
   border-radius: 999px;
-  padding: 3px 8px;
+  padding: 4px 9px;
   font-weight: 800;
 }
 .goal-line {
@@ -1837,10 +2013,94 @@ const cssStyles = `
   margin-top: 4px;
   font-weight: 600;
 }
+.goal-progress-rail {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.24);
+  margin-top: 10px;
+  overflow: hidden;
+}
+.goal-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #22c55e, #86efac);
+  transition: width 0.35s ease;
+}
+.goal-progress-meta {
+  margin-top: 6px;
+  font-size: 0.74rem;
+  color: var(--muted);
+  font-weight: 700;
+}
 .goal-eta {
   margin-top: 6px;
   font-size: 0.8rem;
-  color: var(--brand);
+  color: #86efac;
+  font-weight: 800;
+}
+.goal-monthly-title {
+  margin-top: 0;
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.goal-chart-pane {
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  border-radius: 10px;
+  background: rgba(16, 185, 129, 0.06);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  margin-top: 10px;
+}
+.goal-chart-pane.featured {
+  background: linear-gradient(160deg, rgba(4, 47, 46, 0.8), rgba(20, 83, 45, 0.78), rgba(15, 23, 42, 0.88));
+  border-color: rgba(110, 231, 183, 0.5);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 14px 24px -20px rgba(16, 185, 129, 0.55);
+}
+.goal-mini-chart {
+  position: relative;
+  width: 100%;
+  height: 140px;
+  margin-top: 6px;
+}
+.goal-mini-chart.featured {
+  height: 220px;
+}
+.goal-mini-chart canvas {
+  max-width: 100% !important;
+}
+.goal-projection-strip {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.goal-projection-pill {
+  flex: 0 0 auto;
+  min-width: 86px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(15, 23, 42, 0.55);
+  padding: 7px 9px;
+  display: grid;
+  gap: 3px;
+}
+.projection-month {
+  color: #fbbf24;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.projection-weight {
+  color: #6ee7b7;
+  font-size: 0.76rem;
   font-weight: 800;
 }
 
@@ -2085,9 +2345,10 @@ const cssStyles = `
 
 .chart-with-stats {
   display: grid;
-  grid-template-columns: 1fr 280px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 280px);
   gap: 20px;
   margin-top: 8px;
+  align-items: start;
 }
 
 .chart-container {
@@ -2096,6 +2357,8 @@ const cssStyles = `
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.1);
   padding: 4px 4px 0px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .log-stats-sidebar {
@@ -2106,6 +2369,15 @@ const cssStyles = `
   display: flex;
   flex-direction: column;
   height: fit-content;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.goal-progress-card,
+.trend-card,
+.consistency-card {
+  min-width: 0;
+  overflow: hidden;
 }
 
 .input-group { margin-bottom: 14px; }
@@ -2159,15 +2431,25 @@ const cssStyles = `
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 @keyframes riseIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
+@media (max-width: 1400px) {
+  .middle-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 1320px) {
+  .chart-with-stats { grid-template-columns: 1fr; }
+}
+
 @media (max-width: 1160px) {
   .main-content { grid-template-columns: 1fr; }
   .top-row { grid-template-columns: 1fr; }
   .middle-row { grid-template-columns: 1fr; }
+  .goal-row { grid-template-columns: 1fr; }
   .bottom-row { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 900px) {
   .bottom-row { grid-template-columns: 1fr; }
+  .goal-mini-chart.featured { height: 190px; }
 }
 
 @media (max-width: 760px) {
