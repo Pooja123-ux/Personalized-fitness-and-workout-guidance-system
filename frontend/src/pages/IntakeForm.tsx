@@ -294,7 +294,7 @@ function IntakeForm() {
           </div>
 
           <div className="field">
-            <div className="label">🩺 Health Diseases</div>
+            <div className="label">🩺 Health Diseases & Injuries</div>
             <input className="input" value={form.health_diseases} onChange={e => update('health_diseases', e.target.value)} />
           </div>
         </div>

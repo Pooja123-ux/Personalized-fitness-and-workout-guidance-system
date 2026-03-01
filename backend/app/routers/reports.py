@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import List, Dict
-from ..models import Report
+from ..models import Profile, Report
 from ..deps import get_db, get_current_user
 from ..report_parser import extract_summary
 from .. import logic
@@ -48,6 +48,17 @@ def _normalize_conditions(conditions):
             out.append(x)
     return out
 
+def _merge_profile_injuries(profile: Profile, injury_parts: List[str]) -> None:
+    if not injury_parts:
+        return
+    existing = (profile.health_diseases or "").strip()
+    text = existing.lower()
+    missing = [p for p in injury_parts if p and p not in text]
+    if not missing:
+        return
+    extra = f"injuries: {', '.join(missing)}"
+    profile.health_diseases = f"{existing} | {extra}" if existing else extra
+
 
 @router.post("/upload", response_model=Dict[str, str])
 async def upload_report(
@@ -73,21 +84,29 @@ async def upload_report(
 
     # Enrich summary with foods to consume/avoid based on detected diseases
     enriched_summary = summary
+    injury_parts: List[str] = []
     try:
         if summary:
             data = json.loads(summary)
             conditions = _normalize_conditions(data.get("conditions") or [])
+            injury_parts = [str(x).strip().lower() for x in (data.get("injury_body_parts") or []) if str(x).strip()]
             if isinstance(conditions, list) and conditions:
                 recs = logic.get_disease_recommendations(conditions)
                 data["foods_to_consume"] = recs.get("consume", [])
                 data["foods_to_avoid"] = recs.get("avoid", [])
                 data["conditions"] = conditions
+            if injury_parts:
+                data["injury_body_parts"] = injury_parts
             enriched_summary = json.dumps(data)
     except Exception:
         enriched_summary = summary
     
     report = Report(user_id=user.id, filename=filename, path=path, summary=enriched_summary)
     db.add(report)
+    profile = db.query(Profile).filter(Profile.user_id == user.id).first()
+    if profile and injury_parts:
+        _merge_profile_injuries(profile, injury_parts)
+        db.add(profile)
     db.commit()
     db.refresh(report)
     _invalidate_weekly_plan_cache(user.id)

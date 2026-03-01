@@ -508,7 +508,8 @@ def generate_daily_meals(
     recent_foods: Optional[List[str]] = None
 ) -> DailyMealPlan:
     """Generate meals for a single day using personalized nutrition recommendations"""
-    
+    effective_allergies: List[str] = []
+
     try:
         personalized_recommendations = personalized_recommendations or []
         daily_fruits = ["Apple", "Orange", "Papaya", "Guava", "Pomegranate", "Pear", "Kiwi"]
@@ -516,7 +517,10 @@ def generate_daily_meals(
         user_context = user_context or {}
         report_context = report_context or {}
         report_avoid = [str(x).strip() for x in report_context.get("avoid", []) if str(x).strip()]
-        effective_allergies = _dedupe_keep_order(allergies + report_avoid)
+        report_consume = [str(x).strip() for x in report_context.get("consume", []) if str(x).strip()]
+        disease_recs = logic.get_disease_recommendations(diseases or []) if diseases else {"consume": [], "avoid": []}
+        effective_allergies = _dedupe_keep_order(allergies + report_avoid + [str(x) for x in (disease_recs.get("avoid", []) or []) if str(x).strip()])
+        effective_consume = _dedupe_keep_order(report_consume + [str(x) for x in (disease_recs.get("consume", []) or []) if str(x).strip()])
 
         # Get personalized food recommendations from the existing nutrition system
         user_data = {
@@ -574,16 +578,25 @@ def generate_daily_meals(
                         fresh_first.append(meal)
                 diet_recommendations = fresh_first + repeated_later
 
-        # Honor report-level avoid cues as hard block for weekly plan safety
-        if report_avoid:
+        # Honor merged avoid cues as hard block for weekly plan safety.
+        avoid_for_recs = _dedupe_keep_order(report_avoid + [str(x) for x in (disease_recs.get("avoid", []) or []) if str(x).strip()])
+        if avoid_for_recs:
             filtered_recs = []
             for meal in diet_recommendations:
                 fname = str(meal.get("food_name", "")).lower()
-                if any(tok.lower() in fname for tok in report_avoid):
+                if any(tok.lower() in fname for tok in avoid_for_recs):
                     continue
                 filtered_recs.append(meal)
             if filtered_recs:
                 diet_recommendations = filtered_recs
+
+        # Pull consume cues earlier in the list so they get selected first.
+        if effective_consume and diet_recommendations:
+            consume_tokens = [c.lower() for c in effective_consume]
+            def _consume_rank(meal: Dict[str, Any]) -> int:
+                n = str(meal.get("food_name", "")).lower()
+                return 0 if any(tok in n for tok in consume_tokens) else 1
+            diet_recommendations = sorted(diet_recommendations, key=_consume_rank)
         
         # Create meal categories from recommendations
         breakfast_foods = []
@@ -591,7 +604,7 @@ def generate_daily_meals(
         snack_foods = []
         dinner_foods = []
         
-        # Distribute personalized recommendations across meal types based on day and calorie targets
+        # Distribute personalized recommendations by their intended meal_type first.
         for i, meal in enumerate(diet_recommendations):
             meal_item = MealItem(
                 name=meal.get("food_name", "Unknown Food"),
@@ -615,33 +628,19 @@ def generate_daily_meals(
                 preparation_time=20,
                 difficulty="medium"
             )
-            
-            # Calculate target calories per meal
-            breakfast_target = int(target_calories * 0.25)
-            lunch_target = int(target_calories * 0.35)
-            snack_target = int(target_calories * 0.10)
-            dinner_target = int(target_calories * 0.30)
-            
-            # Calculate current calories in each meal
-            breakfast_current = sum(item.calories for item in breakfast_foods)
-            lunch_current = sum(item.calories for item in lunch_foods)
-            snack_current = sum(item.calories for item in snack_foods)
-            dinner_current = sum(item.calories for item in dinner_foods)
-            
-            # Distribute based on which meal needs more calories
-            meal_distribution = (day_index + i) % 4
-            
-            # Smart distribution based on calorie needs
-            if breakfast_current < breakfast_target * 0.8 and meal_distribution == 0:
+
+            meal_type = str(meal.get("meal_type", "")).strip().lower()
+            if meal_type == "breakfast":
                 breakfast_foods.append(meal_item)
-            elif lunch_current < lunch_target * 0.8 and meal_distribution == 1:
+            elif meal_type == "lunch":
                 lunch_foods.append(meal_item)
-            elif snack_current < snack_target * 0.8 and meal_distribution == 2:
+            elif meal_type in ["snack", "snacks"]:
                 snack_foods.append(meal_item)
-            elif dinner_current < dinner_target * 0.8:
+            elif meal_type == "dinner":
                 dinner_foods.append(meal_item)
             else:
-                # Fallback to standard distribution
+                # Fallback only when meal type is missing.
+                meal_distribution = (day_index + i) % 4
                 if meal_distribution == 0:
                     breakfast_foods.append(meal_item)
                 elif meal_distribution == 1:
@@ -740,7 +739,7 @@ def generate_daily_meals(
         if not breakfast_foods:
             breakfast_foods = [MealItem(name="Oatmeal", calories=150, protein=5, carbs=27, fats=3, preparation_time=15, difficulty="easy")]
         if not lunch_foods:
-            lunch_foods = [MealItem(name="Rice with Mixed Vegetable Curry", calories=320, protein=9, carbs=50, fats=8, preparation_time=25, difficulty="medium")]
+            lunch_foods = [MealItem(name="Mixed Vegetable Curry", calories=240, protein=9, carbs=32, fats=8, preparation_time=25, difficulty="medium")]
         if not snack_foods:
             snack_foods = [MealItem(name=fallback_fruit, calories=60, protein=1, carbs=15, fats=0, preparation_time=5, difficulty="easy")]
         if not dinner_foods:
@@ -751,7 +750,7 @@ def generate_daily_meals(
         daily_fruits = ["Apple", "Orange", "Papaya", "Guava", "Pomegranate", "Pear", "Kiwi"]
         fallback_fruit = daily_fruits[day_index % len(daily_fruits)]
         breakfast_foods = [MealItem(name="Oatmeal", calories=150, protein=5, carbs=27, fats=3, preparation_time=15, difficulty="easy")]
-        lunch_foods = [MealItem(name="Rice with Mixed Vegetable Curry", calories=320, protein=9, carbs=50, fats=8, preparation_time=25, difficulty="medium")]
+        lunch_foods = [MealItem(name="Mixed Vegetable Curry", calories=240, protein=9, carbs=32, fats=8, preparation_time=25, difficulty="medium")]
         snack_foods = [MealItem(name=fallback_fruit, calories=60, protein=1, carbs=15, fats=0, preparation_time=5, difficulty="easy")]
         dinner_foods = [MealItem(name="Vegetable Curry", calories=250, protein=6, carbs=35, fats=10, preparation_time=30, difficulty="medium")]
 
@@ -785,6 +784,29 @@ def generate_daily_meals(
     snack_foods, lunch_foods, dinner_foods = _enforce_meal_rules(
         day_index, snack_foods, lunch_foods, dinner_foods
     )
+    # Re-apply merged avoid filters after adjustment so blocked foods never leak back.
+    if effective_allergies:
+        avoid_tokens = [a.lower() for a in effective_allergies]
+        breakfast_foods = [m for m in breakfast_foods if not any(tok in m.name.lower() for tok in avoid_tokens)]
+        lunch_foods = [m for m in lunch_foods if not any(tok in m.name.lower() for tok in avoid_tokens)]
+        snack_foods = [m for m in snack_foods if not any(tok in m.name.lower() for tok in avoid_tokens)]
+        dinner_foods = [m for m in dinner_foods if not any(tok in m.name.lower() for tok in avoid_tokens)]
+
+    # Remove duplicates across a day while preserving meal priority order.
+    seen_foods: set[str] = set()
+    def _dedupe(items: List[MealItem]) -> List[MealItem]:
+        out: List[MealItem] = []
+        for it in items:
+            k = str(it.name).strip().lower()
+            if not k or k in seen_foods:
+                continue
+            seen_foods.add(k)
+            out.append(it)
+        return out
+    breakfast_foods = _dedupe(breakfast_foods)
+    lunch_foods = _dedupe(lunch_foods)
+    snack_foods = _dedupe(snack_foods)
+    dinner_foods = _dedupe(dinner_foods)
     all_meals = breakfast_foods + lunch_foods + snack_foods + dinner_foods
     total_calories = sum(item.calories for item in all_meals)
     total_protein = sum(item.protein for item in all_meals)

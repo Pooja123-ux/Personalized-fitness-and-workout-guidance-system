@@ -57,6 +57,7 @@ const WeeklyMealPlanDisplay: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [selectedDay, setSelectedDay] = useState<string>('Monday');
   const [loading, setLoading] = useState(false);
+  const [isPersonalized, setIsPersonalized] = useState(false);
 
   useEffect(() => {
     fetchWeeklyMealPlan();
@@ -65,11 +66,21 @@ const WeeklyMealPlanDisplay: React.FC = () => {
   const fetchWeeklyMealPlan = async () => {
     try {
       setLoading(true);
-      const response = await api.get('/public-meal-plan/weekly-plan');
-      setWeeklyPlan(response.data.weekly_plan);
-      setError(null);
-    } catch (err) {
-      setError('Failed to fetch weekly meal plan');
+      try {
+        const response = await api.get('/meal-plan/weekly-plan');
+        setWeeklyPlan(response.data.weekly_plan);
+        setIsPersonalized(true);
+        setError(null);
+      } catch (privateErr) {
+        const response = await api.get('/public-meal-plan/weekly-plan');
+        setWeeklyPlan(response.data.weekly_plan);
+        setIsPersonalized(false);
+        setError(null);
+        console.warn('Using public weekly fallback:', privateErr);
+      }
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || 'Failed to fetch weekly meal plan';
+      setError(msg);
       console.error('Error:', err);
     } finally {
       setLoading(false);
@@ -168,6 +179,9 @@ const WeeklyMealPlanDisplay: React.FC = () => {
           <div>
             <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Weekly Schedule</span>
             <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '0.95rem' }}>{weeklyPlan.week_start} — {weeklyPlan.week_end}</div>
+            <div style={{ marginTop: 6, fontSize: '0.72rem', fontWeight: 800, color: isPersonalized ? '#059669' : '#64748b' }}>
+              {isPersonalized ? 'Personalized weekly recommendations' : 'Public fallback recommendations'}
+            </div>
           </div>
           <div style={{ textAlign: 'right' }}>
             <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>User Weight</span>

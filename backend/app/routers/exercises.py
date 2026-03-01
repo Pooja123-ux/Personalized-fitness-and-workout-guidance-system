@@ -1,14 +1,16 @@
 from fastapi import APIRouter, Depends, Query
 from typing import List, Dict, Optional, Any
 import pandas as pd
-import os
 from pathlib import Path
 from ..deps import get_current_user
 import re
 
 router = APIRouter()
 
-CSV_PATH = os.path.join(os.path.dirname(__file__), "..", "exercises.csv")
+BASE_DIR = Path(__file__).resolve().parent.parent
+CSV_PATH = BASE_DIR / "exercises_enhanced.csv"
+if not CSV_PATH.exists():
+    CSV_PATH = BASE_DIR / "exercises.csv"
 df = pd.read_csv(CSV_PATH)
 df.columns = [c.strip() for c in df.columns]
 GIF_DIR = Path(__file__).resolve().parent.parent / "gifs"
@@ -282,3 +284,4 @@ def get_pose_hints(exercise_name: str, user=Depends(get_current_user)):
         "pose_hints": hints,
         "difficulty": "beginner" if any(word in name_lower for word in ['basic', 'beginner']) else "intermediate"
     }
+

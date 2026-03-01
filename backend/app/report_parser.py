@@ -27,5 +27,17 @@ def extract_summary(path: str) -> str:
     m = re.search(r'(fasting glucose|glucose)[^0-9]*([0-9]{2,3})\s*mg', lower)
     if m:
         labs["glucose"] = m.group(2)
-    result = {"conditions": conditions, "labs": labs}
+    injury_parts: List[str] = []
+    injury_terms = [
+        "knee", "shoulder", "lower back", "back", "neck", "ankle", "wrist", "elbow", "hip"
+    ]
+    for part in injury_terms:
+        if part in lower and any(tok in lower for tok in ["injury", "pain", "sprain", "strain", "tear", "fracture", "arthritis"]):
+            injury_parts.append(part)
+    # Additional phrase-level capture: "<part> pain/injury"
+    for part, _kind in re.findall(r"(knee|shoulder|lower back|back|neck|ankle|wrist|elbow|hip)\s+(pain|injury|sprain|strain|tear|fracture)", lower):
+        injury_parts.append(part)
+    injury_parts = list(dict.fromkeys(injury_parts))
+
+    result = {"conditions": conditions, "labs": labs, "injury_body_parts": injury_parts}
     return json.dumps(result)

@@ -1,6 +1,6 @@
 import os
 import re
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from pathlib import Path
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
@@ -164,6 +164,21 @@ def suggest_for_target(df: pd.DataFrame, meal_cal: float, topn: int = 10, user_f
     df2["calories_per_100g"] = df2["calories_per_100g"].replace(0, pd.NA)
     fallback_density = 200.0
 
+    # Dataset consistency guard: kcal should broadly match macro-derived energy.
+    macro_kcal_est = (
+        pd.to_numeric(df2.get("protein", 0), errors="coerce").fillna(0) * 4.0
+        + pd.to_numeric(df2.get("carbs", 0), errors="coerce").fillna(0) * 4.0
+        + pd.to_numeric(df2.get("fat", 0), errors="coerce").fillna(0) * 9.0
+    )
+    too_low_energy = (
+        pd.notna(df2["calories_per_100g"])
+        & (df2["calories_per_100g"].astype(float) > 0)
+        & (macro_kcal_est > 0)
+        & (df2["calories_per_100g"].astype(float) < (macro_kcal_est * 0.6))
+    )
+    if too_low_energy.any():
+        df2.loc[too_low_energy, "calories_per_100g"] = (macro_kcal_est[too_low_energy] * 0.85).clip(lower=80, upper=500)
+
     if allergies:
         base = [a.lower().strip() for a in allergies]
         expanded = []
@@ -234,6 +249,8 @@ def suggest_for_target(df: pd.DataFrame, meal_cal: float, topn: int = 10, user_f
         df2["extra_boost"] = 0
     if penalty_lower:
         df2["extra_penalty"] = df2["food"].str.lower().apply(lambda f: 1 if any(p in f for p in penalty_lower) else 0)
+        # Safety-first behavior: report/profile avoid items are hard-blocked.
+        df2 = df2[df2["extra_penalty"] == 0].copy()
     else:
         df2["extra_penalty"] = 0
 
@@ -252,98 +269,70 @@ def suggest_for_target(df: pd.DataFrame, meal_cal: float, topn: int = 10, user_f
     df2["protein_per_100g"] = pd.to_numeric(df2.get("protein", pd.Series([0] * len(df2))), errors="coerce").fillna(0)
     df2["is_high_protein"] = ((df2["is_high_protein"] == 1) | (df2["protein_per_100g"] > 8.0)).astype(int) # Lowered threshold to 8g
 
-    fruits = ["apple", "banana", "orange", "grape", "mango", "pineapple", "strawberry", "kiwi", "peach", "pear"]
-    sweet_keywords = ["cake", "pie", "jam", "pudding", "sweet", "murabba", "pastry", "tart", "souffle", "squash", "crumb", "upside down", "cold", "sandwich", "payasam", "kheer", "mousse", "sorbet"]
-    salad_keywords = ["salad", "raw", "fresh", "greens", "lettuce", "cucumber", "tomato", "carrot", "beetroot", "sprouts"]
+    # Priority scoring (lower is better):
+    # 1) medical safety, 2) calorie fit, 3) protein/goal alignment, 4) user preference.
+    calories100 = pd.to_numeric(df2["calories_per_100g"], errors="coerce").fillna(fallback_density)
+    protein100 = pd.to_numeric(df2.get("protein", 0), errors="coerce").fillna(0)
+    carbs100 = pd.to_numeric(df2.get("carbs", 0), errors="coerce").fillna(0)
+    fat100 = pd.to_numeric(df2.get("fat", 0), errors="coerce").fillna(0)
 
-    # Protein-to-calorie ratio boost
-    df2["pro_cal_ratio"] = df2["protein_per_100g"] / (df2["calories_per_100g"] + 1)
-    
-    if is_main_meal:
-        # Healthier scoring: STRONGLY prefer high protein, lower cal density, penalize fruits and sweets
-        cal_density = df2["calories_per_100g"].fillna(fallback_density)
-        protein = df2["protein_per_100g"]
-        # Base health score
-        df2["health_score"] = -cal_density * 0.05 - protein * 15.0  # MASSIVE protein multiplier
-        # Additional boost for high-protein foods identified earlier
-        df2["health_score"] -= df2["is_high_protein"] * 1000  # MASSIVE boost for protein sources
-        # Boost for good protein/calorie ratio
-        df2["health_score"] -= df2["pro_cal_ratio"] * 5000
-        
-        # Boost salads for balanced diet
-        df2["salad_boost"] = df2["food"].str.lower().apply(lambda f: 1 if any(sal in f for sal in salad_keywords) else 0)
-        df2["health_score"] -= df2["salad_boost"] * 200  
-        
-        df2["score"] = df2["health_score"] + (df2["serving_g"] - 250).abs() * 0.1 + df2["non_meal_penalty"]
-        
-        # If motive is muscle gain or weight loss, reduce user preference impact if the food is low protein
-        if motive and any(m in motive.lower() for m in ["gain", "loss", "muscle", "fat"]):
-            # Penalize low protein user preferences
-            df2["user_pref_penalty"] = df2.apply(lambda r: 500 if (r["user_boost"] > 0 and r["protein_per_100g"] < 5) else 0, axis=1)
-            df2["score"] += df2["user_pref_penalty"]
-            
-        df2["fruit_penalty"] = df2["food"].str.lower().apply(lambda f: 1 if any(fr in f.lower() for fr in fruits) else 0)
-        df2["score"] += df2["fruit_penalty"] * 100
-        df2["sweet_penalty"] = df2["food"].str.lower().apply(lambda f: 1 if any(sw in f.lower() for sw in sweet_keywords) else 0)
-        df2["score"] += df2["sweet_penalty"] * 100
-        # Apply disease-aware penalties (e.g., diabetes -> carb penalty stronger)
-        if diseases:
-            diseases_lower = [d.lower() for d in diseases]
-            if any("diabetes" in d for d in diseases_lower):
-                df2["score"] += df2.get("carbs", 0) * 0.5
-    elif is_snack:
-        # For snacks, boost staple snacks, fruits, and HIGH PROTEIN options
-        snack_staples = ["sprouted moong","poha","upma","chana","idli","dosa"]
-        df2["snack_boost"] = df2["food"].str.lower().apply(lambda f: 1 if any(st in f for st in snack_staples) else 0)
-        df2["fruit_boost"] = df2["food"].str.lower().apply(lambda f: 1 if any(fr in f.lower() for fr in fruits) else 0)
-        df2["salad_boost"] = df2["food"].str.lower().apply(lambda f: 1 if any(sal in f for sal in salad_keywords) else 0)
-        # Boost protein snacks - MASSIVE BOOST
-        protein = df2.get("protein", 0)
-        df2["score"] = (df2["serving_g"] - 150).abs() * 0.01 + df2["non_meal_penalty"]
-        df2["score"] -= df2["snack_boost"] * 100  
-        df2["score"] -= df2["fruit_boost"] * 150  
-        df2["score"] -= df2["salad_boost"] * 150   
-        df2["score"] -= protein * 5.0  # Increased from 3.0
-        df2["score"] -= df2["is_high_protein"] * 500  # Increased from 300
-        df2["sweet_penalty"] = df2["food"].str.lower().apply(lambda f: 1 if any(sw in f.lower() for sw in sweet_keywords) else 0)
-        df2["score"] += df2["sweet_penalty"] * 100
-        if user_boost_applied:
-            df2["score"] -= df2["user_boost"] * 1000  # stronger boost for closest matches
+    df2["calories_serving"] = (calories100 * df2["serving_g"] / 100.0).fillna(meal_cal)
+    df2["protein_serving"] = (protein100 * df2["serving_g"] / 100.0).fillna(0)
+    df2["carbs_serving"] = (carbs100 * df2["serving_g"] / 100.0).fillna(0)
+    df2["fat_serving"] = (fat100 * df2["serving_g"] / 100.0).fillna(0)
+    df2["protein_density"] = df2["protein_serving"] / (df2["calories_serving"] + 1.0)
+    df2["calorie_gap"] = (df2["calories_serving"] - float(meal_cal)).abs()
+
+    sodium_col = next((c for c in df2.columns if "sodium" in c), None)
+    sugar_col = next((c for c in df2.columns if ("sugar" in c and ("free" in c or c == "sugar"))), None)
+    iron_col = next((c for c in df2.columns if "iron" in c), None)
+    fiber_col = next((c for c in df2.columns if "fiber" in c or "fibre" in c), None)
+    sodium100 = pd.to_numeric(df2.get(sodium_col, 0), errors="coerce").fillna(0) if sodium_col else pd.Series([0] * len(df2), index=df2.index)
+    sugar100 = pd.to_numeric(df2.get(sugar_col, 0), errors="coerce").fillna(0) if sugar_col else pd.Series([0] * len(df2), index=df2.index)
+    iron100 = pd.to_numeric(df2.get(iron_col, 0), errors="coerce").fillna(0) if iron_col else pd.Series([0] * len(df2), index=df2.index)
+    fiber100 = pd.to_numeric(df2.get(fiber_col, 0), errors="coerce").fillna(0) if fiber_col else pd.Series([0] * len(df2), index=df2.index)
+
+    df2["sodium_serving"] = (sodium100 * df2["serving_g"] / 100.0).fillna(0)
+    df2["sugar_serving"] = (sugar100 * df2["serving_g"] / 100.0).fillna(0)
+    df2["iron_serving"] = (iron100 * df2["serving_g"] / 100.0).fillna(0)
+    df2["fiber_serving"] = (fiber100 * df2["serving_g"] / 100.0).fillna(0)
+
+    target_serving = 150 if is_snack else 230
+    df2["score"] = df2["non_meal_penalty"] + (df2["serving_g"] - target_serving).abs() * 0.35 + df2["calorie_gap"] * 3.0
+
+    diseases_lower = [d.lower() for d in (diseases or [])]
+    has_diabetes = any("diabetes" in d for d in diseases_lower)
+    has_hypertension = any("hypertension" in d or "bp" in d for d in diseases_lower)
+    has_heart = any("heart" in d or "cholesterol" in d or "cardiac" in d for d in diseases_lower)
+    has_anemia = any("anemia" in d for d in diseases_lower)
+
+    if has_diabetes:
+        df2["score"] += df2["carbs_serving"] * 2.4 + df2["sugar_serving"] * 3.5
+        if is_snack:
+            df2["score"] += df2["carbs_serving"] * 0.6
+    if has_hypertension or has_heart:
+        df2["score"] += df2["sodium_serving"] * 0.025 + df2["fat_serving"] * 1.2
+    if has_anemia:
+        df2["score"] -= df2["iron_serving"] * 4.5 + df2["protein_serving"] * 0.5
+
+    motive_lower = (motive or "").lower()
+    if "loss" in motive_lower or "lose" in motive_lower or "fat" in motive_lower:
+        df2["score"] += calories100 * 0.45 + df2["fat_serving"] * 0.9
+        df2["score"] -= df2["protein_serving"] * 1.9 + df2["fiber_serving"] * 0.9 + df2["protein_density"] * 220.0
+    elif "gain" in motive_lower or "muscle" in motive_lower or "build" in motive_lower:
+        df2["score"] -= df2["protein_serving"] * 2.2 + df2["protein_density"] * 180.0
+        df2["score"] += df2["calorie_gap"] * 0.8
     else:
-        # Default scoring: prefer servings near 220g, moderate calorie density, and HIGH PROTEIN
-        protein = df2.get("protein", 0)
-        df2["score"] = (df2["serving_g"] - 220).abs() + (df2["calories_per_100g"].fillna(fallback_density) - 200).abs() * 0.02 + df2["non_meal_penalty"]
-        df2["score"] -= protein * 1.5  # Boost high protein foods
-        if user_boost_applied:
-            df2["score"] -= df2["user_boost"] * 1000  # stronger boost for closest matches
-
-    # Apply generic boosts/penalties from consume/avoid and KNN text
-    df2["score"] -= df2["extra_boost"] * 500
-    df2["score"] += df2["extra_penalty"] * 500
-
-    # Additional scoring based on user profile
-    if motive:
-        motive_lower = motive.lower()
-        if "loss" in motive_lower or "lose" in motive_lower:
-            df2["score"] -= df2["calories_per_100g"].fillna(fallback_density) * 0.05
-        elif "gain" in motive_lower:
-            df2["score"] += df2["calories_per_100g"].fillna(fallback_density) * 0.05
-
-    if diseases:
-        diseases_lower = [d.lower() for d in diseases]
-        if any("diabetes" in d for d in diseases_lower):
-            df2["score"] -= df2.get("carbs", 0) * 0.1
-        if any("cholesterol" in d or "heart" in d for d in diseases_lower):
-            df2["score"] -= df2.get("fat", 0) * 0.1
+        df2["score"] -= df2["protein_serving"] * 1.2 + df2["fiber_serving"] * 0.5
 
     if bmi and bmi > 25:
-        df2["score"] -= df2["calories_per_100g"].fillna(fallback_density) * 0.03
+        df2["score"] += calories100 * 0.15
+    if age and age >= 60:
+        df2["score"] -= df2["protein_serving"] * 0.4
+        df2["score"] += df2["fat_serving"] * 0.35
 
-    if age and age > 60:
-        df2["score"] += df2.get("protein", 0) * 0.2 - df2.get("fat", 0) * 0.1
-
-    if diet_type and diet_type.lower() == "vegetarian":
-        df2["score"] += df2.get("protein", 0) * 0.1
+    df2["score"] -= df2["user_boost"] * 140.0
+    df2["score"] -= df2["extra_boost"] * 180.0
 
     # Sort final results by score (lower is better) and protein content
     df2["protein_score"] = pd.to_numeric(df2.get("protein", pd.Series([0] * len(df2))), errors="coerce").astype(float) * -10.0 # Prioritize high protein in final sort
@@ -910,7 +899,173 @@ def normalize_level(level: str) -> str:
         return "intermediate"
     return "advanced"
 
-def get_exercises(level: str, target_count: int = 12, target_area: Optional[str] = None) -> List[Dict]:
+def _split_text_list(value: Optional[Any]) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        raw = [str(x).strip().lower() for x in value if str(x).strip()]
+        return list(dict.fromkeys(raw))
+    s = str(value).strip().lower()
+    if not s:
+        return []
+    for sep in ["|", ";", "/", "\n"]:
+        s = s.replace(sep, ",")
+    out: List[str] = []
+    for part in s.split(","):
+        token = part.strip()
+        if token:
+            out.append(token)
+    return list(dict.fromkeys(out))
+
+def _extract_injuries_from_health_text(text: Optional[str]) -> List[str]:
+    s = (text or "").lower()
+    if not s:
+        return []
+    parts = []
+    injury_map = {
+        "knee": ["knee"],
+        "shoulder": ["shoulder", "rotator cuff"],
+        "lower back": ["lower back", "lumbar", "slip disc", "disc"],
+        "back": ["back"],
+        "neck": ["neck", "cervical"],
+        "ankle": ["ankle"],
+        "wrist": ["wrist"],
+        "elbow": ["elbow"],
+        "hip": ["hip"],
+    }
+    for canonical, keys in injury_map.items():
+        if any(k in s for k in keys):
+            parts.append(canonical)
+    return list(dict.fromkeys(parts))
+
+def _collect_medical_conditions(user_data: Dict) -> List[str]:
+    conditions = []
+    conditions.extend(_split_text_list(user_data.get("diseases")))
+    conditions.extend(_split_text_list(user_data.get("health_diseases")))
+    conditions.extend(_split_text_list(user_data.get("medical_conditions")))
+    out: List[str] = []
+    seen = set()
+    for c in conditions:
+        cl = c.lower().strip()
+        if not cl:
+            continue
+        if "diab" in cl:
+            cl = "diabetes"
+        elif "hyperten" in cl or cl == "bp":
+            cl = "hypertension"
+        elif "cardiac" in cl:
+            cl = "heart"
+        if cl not in seen:
+            seen.add(cl)
+            out.append(cl)
+    return out
+
+def _collect_injured_body_parts(user_data: Dict) -> List[str]:
+    injuries: List[str] = []
+    injuries.extend(_split_text_list(user_data.get("injured_body_parts")))
+    injuries.extend(_split_text_list(user_data.get("report_injuries")))
+    injuries.extend(_extract_injuries_from_health_text(user_data.get("health_diseases")))
+    injuries.extend(_extract_injuries_from_health_text(user_data.get("diseases")))
+    out: List[str] = []
+    seen = set()
+    for i in injuries:
+        x = i.lower().strip()
+        if x and x not in seen:
+            seen.add(x)
+            out.append(x)
+    return out
+
+def _shift_level(level: str, delta: int) -> str:
+    levels = ["beginner", "intermediate", "advanced"]
+    idx = levels.index(level) if level in levels else 0
+    idx = max(0, min(2, idx + delta))
+    return levels[idx]
+
+def _effective_level(
+    base_level: str,
+    age: Optional[int] = None,
+    weight_kg: Optional[float] = None,
+    medical_conditions: Optional[List[str]] = None,
+    adherence_rate_14d: Optional[float] = None,
+    workout_streak_days: Optional[int] = None,
+) -> str:
+    lvl = normalize_level(base_level)
+    try:
+        adherence_rate_14d = float(adherence_rate_14d) if adherence_rate_14d is not None else None
+    except Exception:
+        adherence_rate_14d = None
+    try:
+        workout_streak_days = int(workout_streak_days) if workout_streak_days is not None else 0
+    except Exception:
+        workout_streak_days = 0
+    risk = 0
+    conditions = [c.lower() for c in (medical_conditions or [])]
+
+    # Strictly account for age.
+    if age is not None:
+        if age >= 65:
+            risk += 2
+        elif age >= 55:
+            risk += 1
+
+    # Strictly account for body weight.
+    if weight_kg is not None:
+        if weight_kg >= 105:
+            risk += 2
+        elif weight_kg >= 90:
+            risk += 1
+
+    # Strictly account for medical conditions.
+    cautious_conditions = ["hypertension", "heart", "cardiac", "anemia", "asthma", "arthritis", "injury", "pain"]
+    if any(any(k in c for k in cautious_conditions) for c in conditions):
+        risk += 1
+    if any("heart" in c or "cardiac" in c for c in conditions):
+        risk += 1
+
+    if risk >= 3:
+        lvl = "beginner"
+    elif risk >= 1:
+        lvl = _shift_level(lvl, -1)
+
+    # Adaptive progression/regression from completion trend.
+    if adherence_rate_14d is not None:
+        if adherence_rate_14d >= 0.8 and (workout_streak_days or 0) >= 5 and risk == 0:
+            lvl = _shift_level(lvl, +1)
+        elif adherence_rate_14d <= 0.35:
+            lvl = _shift_level(lvl, -1)
+
+    return lvl
+
+def _is_home_friendly_equipment(equipment: str) -> bool:
+    eq = (equipment or "").strip().lower()
+    if not eq:
+        return True
+
+    home_allowed = [
+        "body weight", "bodyweight", "none", "no equipment",
+        "dumbbell", "kettlebell", "resistance band", "band",
+        "medicine ball", "yoga mat", "mat", "chair"
+    ]
+    gym_only = [
+        "cable", "machine", "barbell", "smith", "leverage",
+        "ez bar", "olympic", "hex bar", "sled", "rowing machine"
+    ]
+
+    if any(token in eq for token in gym_only):
+        return False
+    return any(token in eq for token in home_allowed)
+
+def get_exercises(
+    level: str,
+    target_count: int = 12,
+    target_area: Optional[str] = None,
+    age: Optional[int] = None,
+    weight_kg: Optional[float] = None,
+    medical_conditions: Optional[List[str]] = None,
+    injured_body_parts: Optional[List[str]] = None,
+    adherence_rate_14d: Optional[float] = None,
+    workout_streak_days: Optional[int] = None,
+) -> List[Dict]:
     """Return a limited, diverse set of exercises for the user's level.
 
     Strategy:
@@ -919,12 +1074,19 @@ def get_exercises(level: str, target_count: int = 12, target_area: Optional[str]
     - Select one exercise per body part where possible to cover major areas.
     - Fill remaining slots with other filtered exercises (deterministic order).
     """
-    lvl = normalize_level(level)
+    lvl = _effective_level(
+        level,
+        age=age,
+        weight_kg=weight_kg,
+        medical_conditions=medical_conditions,
+        adherence_rate_14d=adherence_rate_14d,
+        workout_streak_days=workout_streak_days,
+    )
     filtered = df_ex[df_ex[LEVEL_COLUMN] == lvl].copy()
     if filtered.empty:
         filtered = df_ex.copy()
 
-    # prefer bodyweight / minimal equipment where available
+    # enforce home-friendly equipment only
     equip_col = None
     for c in ["equipment", "equip", "type"]:
         if c in filtered.columns:
@@ -932,11 +1094,45 @@ def get_exercises(level: str, target_count: int = 12, target_area: Optional[str]
             break
 
     if equip_col is not None:
-        bw_mask = filtered[equip_col].fillna("").str.lower().str.contains("body weight|bodyweight|none|no equipment")
-        pref = filtered[bw_mask]
-        source = pref if not pref.empty else filtered
+        home_mask = filtered[equip_col].fillna("").apply(lambda e: _is_home_friendly_equipment(str(e)))
+        home_filtered = filtered[home_mask].copy()
+        if home_filtered.empty:
+            # safety fallback to most home-likely options from full dataset
+            all_home_mask = df_ex[equip_col].fillna("").apply(lambda e: _is_home_friendly_equipment(str(e)))
+            source = df_ex[all_home_mask].copy()
+            if source.empty:
+                source = filtered.copy()
+        else:
+            source = home_filtered
     else:
         source = filtered
+
+    injuries = [x.lower().strip() for x in (injured_body_parts or []) if str(x).strip()]
+    injury_keyword_map = {
+        "knee": ["knee", "leg", "quad", "hamstring", "calf", "lunge", "squat"],
+        "shoulder": ["shoulder", "chest", "deltoid", "press", "push", "arm raise"],
+        "lower back": ["lower back", "back", "deadlift", "hinge", "good morning"],
+        "back": ["back", "row", "pull"],
+        "neck": ["neck", "shrug", "cervical"],
+        "ankle": ["ankle", "jump", "calf raise", "run", "sprint"],
+        "wrist": ["wrist", "push up", "plank", "burpee"],
+        "elbow": ["elbow", "curl", "extension", "dip"],
+        "hip": ["hip", "lunge", "squat", "glute", "hinge"],
+    }
+    if injuries:
+        def _hits_injury(row: pd.Series) -> bool:
+            hay = " ".join([
+                str(row.get("name", "")),
+                str(row.get("bodypart", "")),
+                str(row.get("target", "")),
+                str(row.get("equipment", "")),
+            ]).lower()
+            for inj in injuries:
+                keys = injury_keyword_map.get(inj, [inj])
+                if any(k in hay for k in keys):
+                    return True
+            return False
+        source = source[~source.apply(_hits_injury, axis=1)].copy()
 
     # prioritize exercises matching a user-specified target area, but keep diversity
     ta = (target_area or "").strip().lower() if target_area is not None else ""
@@ -1077,10 +1273,43 @@ def get_exercises(level: str, target_count: int = 12, target_area: Optional[str]
 
     # If still empty (edge case), return a small default set
     if not selections:
+        if injuries:
+            safe_fallback = [
+                {
+                    "id": "safe-walk",
+                    "name": "Brisk Walking (Low Impact)",
+                    "body_part": "cardio",
+                    "equipment": "none",
+                    "target": "cardio",
+                    "secondary_muscles": [],
+                    "link": "",
+                    "steps": ["Walk at a comfortable pace", "Keep posture upright", "Breathe steadily for 15-20 minutes"],
+                    "repetitions": "20 min",
+                    "gif_url": "",
+                    "recommended_level": "beginner",
+                },
+                {
+                    "id": "safe-breathing",
+                    "name": "Diaphragmatic Breathing",
+                    "body_part": "core",
+                    "equipment": "none",
+                    "target": "core",
+                    "secondary_muscles": [],
+                    "link": "",
+                    "steps": ["Sit or lie comfortably", "Inhale for 4 seconds", "Exhale for 6 seconds", "Repeat for 5-10 minutes"],
+                    "repetitions": "10 min",
+                    "gif_url": "",
+                    "recommended_level": "beginner",
+                },
+            ]
+            return safe_fallback[:target_count]
         fallback = df_ex.head(min(target_count, len(df_ex))).to_dict(orient="records")
         return [_assemble(r) for r in fallback]
 
-    return [_assemble(r) for r in selections[:target_count]]
+    output = [_assemble(r) for r in selections[:target_count]]
+    for item in output:
+        item["recommended_level"] = lvl
+    return output
 
 # =========================================================
 # ================= YOGA ================================
@@ -1353,6 +1582,10 @@ def generate_recommendations(user_data: Dict) -> Dict:
     alternative_plans = [build_meal_plan(i) for i in range(1, 8)]
 
     level = user_data.get("level", "beginner")
+    medical_conditions = _collect_medical_conditions(user_data)
+    injured_body_parts = _collect_injured_body_parts(user_data)
+    adherence_rate_14d = user_data.get("workout_completion_rate_14d")
+    workout_streak_days = user_data.get("workout_streak_days")
 
     # Build test output for display
     test_output = "User Meal Preferences:\n"
@@ -1410,7 +1643,17 @@ def generate_recommendations(user_data: Dict) -> Dict:
         "diet_totals": main_plan_totals,
         "diet_alternatives": diet_alternatives,
         "alternative_meal_plans": alternative_plans_with_totals,
-        "workouts": get_exercises(level, target_count=12, target_area=user_data.get("target_area", "")),
+        "workouts": get_exercises(
+            level,
+            target_count=12,
+            target_area=user_data.get("target_area", ""),
+            age=user_data.get("age"),
+            weight_kg=user_data.get("weight_kg"),
+            medical_conditions=medical_conditions,
+            injured_body_parts=injured_body_parts,
+            adherence_rate_14d=adherence_rate_14d,
+            workout_streak_days=workout_streak_days,
+        ),
         "yoga": get_yoga(level, target_area=user_data.get("target_area", "")),
         "diet_recommendation_text": get_diet_recommendation_text(user_data),
         "test_output": test_output

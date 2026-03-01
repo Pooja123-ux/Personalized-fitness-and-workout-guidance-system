@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from typing import List, Dict, Optional
 from datetime import date, datetime, timedelta
 from ..deps import get_db, get_current_user
-from ..models import Profile, Report
+from ..models import Profile, Report, WorkoutDailyLog
 from .. import logic
 import json
 
@@ -45,6 +45,27 @@ class WeeklyWorkoutPlan(BaseModel):
 # In-memory storage for demo (use database in production)
 weekly_workout_plans = {}
 
+def _split_csv(value: Optional[str]) -> List[str]:
+    if not value:
+        return []
+    s = str(value).lower()
+    for sep in ["|", ";", "/", "\n"]:
+        s = s.replace(sep, ",")
+    out = [p.strip() for p in s.split(",") if p.strip()]
+    return list(dict.fromkeys(out))
+
+def _extract_report_injuries(summary_text: Optional[str]) -> List[str]:
+    if not summary_text:
+        return []
+    try:
+        data = json.loads(summary_text)
+        vals = data.get("injury_body_parts") or data.get("injuries") or []
+        if isinstance(vals, list):
+            return list(dict.fromkeys([str(v).strip().lower() for v in vals if str(v).strip()]))
+    except Exception:
+        pass
+    return []
+
 def infer_level_from_lifestyle(lifestyle_level: Optional[str]) -> str:
     """Map profile lifestyle_level to workout level."""
     value = (lifestyle_level or "").strip().lower()
@@ -83,11 +104,28 @@ def get_weekly_workout_variety(target_area: str, level: str, weight_kg: float) -
     
     return weekly_focus
 
-def generate_exercises_for_focus(focus_area: str, level: str, target_area: str, weight_kg: float) -> Dict:
+def generate_exercises_for_focus(
+    focus_area: str,
+    level: str,
+    target_area: str,
+    weight_kg: float,
+    profile_context: Optional[Dict] = None,
+) -> Dict:
     """Generate exercises based on focus area and user profile"""
     
     # Get base exercises from logic
-    base_exercises = logic.get_exercises(level, target_count=15, target_area=target_area)
+    profile_context = profile_context or {}
+    base_exercises = logic.get_exercises(
+        level,
+        target_count=15,
+        target_area=target_area,
+        age=profile_context.get("age"),
+        weight_kg=profile_context.get("weight_kg"),
+        medical_conditions=_split_csv(profile_context.get("health_diseases")),
+        injured_body_parts=profile_context.get("injured_body_parts", []),
+        adherence_rate_14d=profile_context.get("workout_completion_rate_14d"),
+        workout_streak_days=profile_context.get("workout_streak_days"),
+    )
     
     # Filter and categorize exercises based on focus area
     warmup_exercises = []
@@ -99,7 +137,7 @@ def generate_exercises_for_focus(focus_area: str, level: str, target_area: str, 
     for exercise in base_exercises:
         exercise_item = WorkoutItem(
             name=exercise.get("name", "Unknown Exercise"),
-            body_part=exercise.get("bodypart", "Full Body"),
+            body_part=exercise.get("body_part", exercise.get("bodypart", "Full Body")),
             equipment=exercise.get("equipment", "Body Weight"),
             difficulty=level,
             reps=exercise.get("repetitions", "3x10"),
@@ -116,14 +154,15 @@ def generate_exercises_for_focus(focus_area: str, level: str, target_area: str, 
             cooldown_exercises.append(exercise_item)
         else:
             # Assign to main exercises based on focus area
-            if "upper" in focus_lower and any(part in exercise.get("bodypart", "").lower() for part in ["chest", "back", "shoulder", "arm"]):
+            exercise_body = str(exercise.get("body_part", exercise.get("bodypart", ""))).lower()
+            if "upper" in focus_lower and any(part in exercise_body for part in ["chest", "back", "shoulder", "arm"]):
                 main_exercises.append(exercise_item)
-            elif "lower" in focus_lower and any(part in exercise.get("bodypart", "").lower() for part in ["leg", "glute", "thigh", "calf"]):
+            elif "lower" in focus_lower and any(part in exercise_body for part in ["leg", "glute", "thigh", "calf"]):
                 main_exercises.append(exercise_item)
             elif "cardio" in focus_lower or "hiit" in focus_lower:
-                if any(cardio in exercise.get("bodypart", "").lower() for cardio in ["cardio", "full body"]):
+                if any(cardio in exercise_body for cardio in ["cardio", "full body"]):
                     main_exercises.append(exercise_item)
-            elif "core" in focus_lower and any(core in exercise.get("bodypart", "").lower() for core in ["core", "abdominal", "abs"]):
+            elif "core" in focus_lower and any(core in exercise_body for core in ["core", "abdominal", "abs"]):
                 main_exercises.append(exercise_item)
             else:
                 # Add to main exercises if it doesn't fit specific categories
@@ -199,7 +238,14 @@ def estimate_calories_burned(exercise: Dict, weight_kg: float, level: str) -> in
     duration = estimate_exercise_duration(exercise, level)
     return int(rate * weight_kg * duration)
 
-def generate_daily_workout(day_index: int, focus_data: Dict, level: str, target_area: str, weight_kg: float) -> DailyWorkoutPlan:
+def generate_daily_workout(
+    day_index: int,
+    focus_data: Dict,
+    level: str,
+    target_area: str,
+    weight_kg: float,
+    profile_context: Optional[Dict] = None,
+) -> DailyWorkoutPlan:
     """Generate workout plan for a specific day"""
     
     if focus_data["intensity"] == "rest":
@@ -213,7 +259,7 @@ def generate_daily_workout(day_index: int, focus_data: Dict, level: str, target_
             estimated_calories=0
         )
     
-    exercises = generate_exercises_for_focus(focus_data["focus"], level, target_area, weight_kg)
+    exercises = generate_exercises_for_focus(focus_data["focus"], level, target_area, weight_kg, profile_context=profile_context)
     
     # Calculate totals
     total_duration = sum(item.duration_minutes for item in exercises["warmup"] + exercises["main"] + exercises["cooldown"])
@@ -246,7 +292,7 @@ def generate_weekly_workout_plan(profile_data: Dict) -> WeeklyWorkoutPlan:
     rest_days = []
     
     for day_index, focus_data in weekly_focus.items():
-        daily_workout = generate_daily_workout(day_index, focus_data, level, target_area, weight_kg)
+        daily_workout = generate_daily_workout(day_index, focus_data, level, target_area, weight_kg, profile_context=profile_data)
         workouts[focus_data["day"]] = daily_workout
         
         total_duration += daily_workout.total_duration
@@ -300,10 +346,36 @@ async def get_weekly_workout_plan(
         if should_update:
             # Generate new plan
             profile_level = infer_level_from_lifestyle(getattr(profile, "lifestyle_level", None))
+            latest_report = (
+                db.query(Report)
+                .filter(Report.user_id == user.id)
+                .order_by(Report.created_at.desc())
+                .first()
+            )
+            report_injuries = _extract_report_injuries(getattr(latest_report, "summary", "") if latest_report else "")
+            today = date.today()
+            start = today - timedelta(days=13)
+            workout_logs = (
+                db.query(WorkoutDailyLog)
+                .filter(WorkoutDailyLog.user_id == user.id, WorkoutDailyLog.log_date >= start.isoformat())
+                .all()
+            )
+            completion_rate_14d = (sum(1 for r in workout_logs if bool(getattr(r, "completed", False))) / 14.0) if workout_logs else 0.0
+            recent_lookup = {str(getattr(r, "log_date", "")): bool(getattr(r, "completed", False)) for r in workout_logs}
+            streak = 0
+            cursor = today
+            while recent_lookup.get(cursor.isoformat(), False):
+                streak += 1
+                cursor = cursor - timedelta(days=1)
             profile_data = {
                 "weight_kg": float(profile_weight) if profile_weight is not None else 70,
                 "level": profile_level,
-                "target_area": getattr(profile, "target_area", None) or "general fitness"
+                "target_area": getattr(profile, "target_area", None) or "general fitness",
+                "age": getattr(profile, "age", None),
+                "health_diseases": getattr(profile, "health_diseases", "") or "",
+                "injured_body_parts": list(dict.fromkeys(_split_csv(getattr(profile, "health_diseases", "")) + report_injuries)),
+                "workout_completion_rate_14d": completion_rate_14d,
+                "workout_streak_days": streak,
             }
             
             new_plan = generate_weekly_workout_plan(profile_data)

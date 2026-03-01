@@ -72,7 +72,28 @@ function WeeklyWorkoutPlanDisplay() {
     }
   }
 
+  const isHomeFriendlyEquipment = (equipment: string) => {
+    const eq = (equipment || '').toLowerCase().trim()
+    if (!eq) return true
+
+    const homeAllowed = [
+      'body weight', 'bodyweight', 'none', 'no equipment',
+      'dumbbell', 'kettlebell', 'resistance band', 'band',
+      'medicine ball', 'yoga mat', 'mat', 'chair'
+    ]
+    const gymOnly = [
+      'cable', 'machine', 'barbell', 'smith', 'leverage',
+      'ez bar', 'olympic', 'hex bar', 'sled', 'rowing machine'
+    ]
+
+    if (gymOnly.some((token) => eq.includes(token))) return false
+    return homeAllowed.some((token) => eq.includes(token))
+  }
+
   const generateWeeklyWorkoutPlanFromDataset = (dataset: any[]): WeeklyWorkoutPlan[] => {
+    const homeDataset = dataset.filter((exercise) => isHomeFriendlyEquipment(String(exercise.equipment || '')))
+    const sourceDataset = homeDataset.length > 0 ? homeDataset : dataset
+
     const bodyPartToTargetArea: { [key: string]: string } = {
       waist: 'Core',
       'upper legs': 'Lower Body',
@@ -96,7 +117,7 @@ function WeeklyWorkoutPlanDisplay() {
       return repsSets[targetArea] || { reps: '10-12', sets: 3, rest: '60s' }
     }
 
-    const exercisesByBodyPart = dataset.reduce((acc, exercise) => {
+    const exercisesByBodyPart = sourceDataset.reduce((acc, exercise) => {
       const bodyPart = exercise.bodyPart
       if (!acc[bodyPart]) acc[bodyPart] = []
       acc[bodyPart].push(exercise)
@@ -126,7 +147,7 @@ function WeeklyWorkoutPlanDisplay() {
         exercises = exercises.filter((exercise, index, self) => index === self.findIndex((e) => e.id === exercise.id)).slice(0, 6)
       } else if (targetArea === 'Flexibility') {
         const flexibilityKeywords = ['stretch', 'yoga', 'mobility', 'flex']
-        exercises = dataset
+        exercises = sourceDataset
           .filter((exercise) =>
             flexibilityKeywords.some(
               (keyword) => exercise.name.toLowerCase().includes(keyword) || exercise.target.toLowerCase().includes(keyword)

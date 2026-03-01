@@ -49,6 +49,8 @@ class ProfileIn(BaseModel):
 
     food_allergies: Optional[str] = None
     health_diseases: Optional[str] = None
+    injured_body_parts: Optional[str] = None
+    injury_notes: Optional[str] = None
 
 
 class ProfileOut(ProfileIn):

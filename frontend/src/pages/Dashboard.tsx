@@ -1,4 +1,4 @@
-﻿﻿﻿﻿import React, { useEffect, useState } from 'react';
+﻿﻿import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useProfile } from '../context/ProfileContext';
 import api from '../api';
@@ -652,6 +652,9 @@ export default function Dashboard() {
     ? adherence7.map((d: any) => Number(d.water_progress_percent || 0))
     : recentDates.map(() => fallbackWaterPct);
   const protein7Safe = protein7.some((x: number) => x > 0) ? protein7 : recentDates.map(() => fallbackProtein);
+  const workoutCalories7 = adherence7.length > 0
+    ? adherence7.map((d: any) => Number(d.workout_calories_burned || 0))
+    : recentDates.map(() => Number(todayWorkoutCalories || currentWorkoutBurned || 0));
   const workout7Pct = workout7.map((x: { completed: boolean }) => (x.completed ? 100 : 0));
 
   const trendDirection = (values: number[]) => {
@@ -669,6 +672,13 @@ export default function Dashboard() {
     const delta = last - first;
     const sign = delta > 0 ? '+' : '';
     return `${sign}${Math.round(delta)}${suffix}`;
+  };
+
+  const trendAverageText = (values: number[], suffix = '', unit = '') => {
+    if (!values.length) return 'No data';
+    const total = values.reduce((sum, value) => sum + Number(value || 0), 0);
+    const avg = total / values.length;
+    return `${Math.round(avg)}${suffix}${unit}`;
   };
 
   const profileAny = profile as any;
@@ -995,8 +1005,8 @@ export default function Dashboard() {
           { icon: '🍽️', label: hasTodayFoodLog ? 'Consumed Today' : 'Last Meal', val: displayFoodPoint ? `${Math.round(displayFoodPoint.consumed_total_calories || 0)} kcal` : '—', theme: 'eat' },
           { icon: '🥩', label: 'Protein Target (approx)', val: displayProteinGoal != null ? `${displayProteinGoal}g` : '—', theme: 'protein' },
           { icon: '💧', label: 'Water Target (approx)', val: rec?.water_l ? `${rec.water_l}L` : '—', theme: 'water' },
-          { icon: '⏱️', label: 'Workout Duration (approx)', val: `${workoutMinutes} min`, theme: 'time' },
-          { icon: '🔥', label: `Calories Burned`, val: `${Math.round(currentWorkoutBurned || (workoutCompletedToday ? todayWorkoutCalories : 0))} kcal`, theme: 'burn' },
+          { icon: '⏱️', label: 'Workout Duration (approx)', val: `30 - 45 min`, theme: 'time' },
+          { icon: '🔥', label: `Calories Burned today`, val: `${Math.round(currentWorkoutBurned || (workoutCompletedToday ? todayWorkoutCalories : 0))} kcal`, theme: 'burn' },
           { icon: '👟', label: 'Steps Target', val: '7K-10K', theme: 'steps' },
           { icon: '😴', label: 'Sleep Target', val: '7-8 hrs', theme: 'sleep' }
         ].map((s, i) => (
@@ -1147,20 +1157,23 @@ export default function Dashboard() {
             </div>
             <div className="trend-grid">
               {[
-                { label: 'Weight', values: weightTrendValues, suffix: ' kg', meta: 'progress' },
-                { label: 'Calories', values: calories7, suffix: ' kcal', meta: 'consumed' },
-                { label: 'Water', values: water7, suffix: '%', meta: 'target' },
-                { label: 'Protein', values: protein7Safe, suffix: ' g', meta: 'planned' }
+                { label: 'Weight', values: weightTrendValues, suffix: ' kg', meta: 'progress', display: 'delta' },
+                { label: 'Calories', values: calories7, suffix: ' kcal', meta: 'avg/day consumed', display: 'average' },
+                { label: 'Water', values: water7, suffix: '%', meta: 'avg/day target', display: 'average' },
+                { label: 'Workout Burn', values: workoutCalories7, suffix: ' kcal', meta: 'avg/day burned', display: 'average' }
               ].map((item) => {
                 const dir = trendDirection(item.values);
                 const maxVal = Math.max(...item.values, 1);
+                const valueText = item.display === 'average'
+                  ? trendAverageText(item.values, item.suffix, '/day')
+                  : trendDeltaText(item.values, item.suffix);
                 return (
                   <article key={item.label} className="trend-item">
                     <div className="trend-top">
                       <div className="trend-label">{item.label}</div>
                       <div className={`trend-dir ${dir}`}>{dir === 'up' ? '▲' : dir === 'down' ? '▼' : '•'}</div>
                     </div>
-                    <div className="trend-value">{trendDeltaText(item.values, item.suffix)}</div>
+                    <div className="trend-value">{valueText}</div>
                     <div className="trend-meta">{item.meta}</div>
                     <div className="trend-sparkline">
                       {item.values.map((val, idx) => {
@@ -2023,7 +2036,7 @@ const cssStyles = `
 .goal-progress-fill {
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #22c55e, #86efac);
+  background: linear-gradient(90deg, #f97316, #facc15);
   transition: width 0.35s ease;
 }
 .goal-progress-meta {

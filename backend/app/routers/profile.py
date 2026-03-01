@@ -4,6 +4,7 @@ from datetime import datetime
 import shutil
 import os
 import json
+import re
 
 from ..schemas import ProfileIn, ProfileOut, Recommendation
 from ..models import Profile, Report
@@ -19,9 +20,56 @@ from ..logic import (
     df_food,
     df_chatbot,
 )
-from typing import Optional
+from typing import Dict, Optional
 
 router = APIRouter()
+
+_INJURY_PARTS = ["knee", "shoulder", "lower back", "back", "neck", "ankle", "wrist", "elbow", "hip"]
+
+def _split_csv(value: Optional[str]) -> list[str]:
+    if not value:
+        return []
+    s = str(value).lower()
+    for sep in ["|", ";", "/", "\n"]:
+        s = s.replace(sep, ",")
+    out = []
+    for part in s.split(","):
+        token = part.strip()
+        if token:
+            out.append(token)
+    seen = set()
+    dedup = []
+    for x in out:
+        if x not in seen:
+            seen.add(x)
+            dedup.append(x)
+    return dedup
+
+def _extract_profile_injuries(health_diseases: Optional[str]) -> Dict[str, str]:
+    text = (health_diseases or "")
+    lower = text.lower()
+    injured_parts = []
+    for p in _INJURY_PARTS:
+        if p in lower:
+            injured_parts.append(p)
+    note_match = re.search(r"injury[_\s]*notes?\s*:\s*([^;|]+)", lower)
+    injury_notes = note_match.group(1).strip() if note_match else ""
+    return {
+        "injured_body_parts": ", ".join(dict.fromkeys(injured_parts)),
+        "injury_notes": injury_notes,
+    }
+
+def _merge_health_with_injuries(health_diseases: Optional[str], injured_body_parts: Optional[str], injury_notes: Optional[str]) -> str:
+    base = (health_diseases or "").strip()
+    injuries = _split_csv(injured_body_parts)
+    if not injuries and not (injury_notes and injury_notes.strip()):
+        return base
+    tokens = [t for t in [base] if t]
+    if injuries:
+        tokens.append(f"injuries: {', '.join(injuries)}")
+    if injury_notes and injury_notes.strip():
+        tokens.append(f"injury_notes: {injury_notes.strip()}")
+    return " | ".join(tokens)
 
 def _invalidate_weekly_plan_cache(user_id: int) -> None:
     """Invalidate cached weekly meal plans after profile/medical changes."""
@@ -50,11 +98,17 @@ def create_or_update_profile(
 
     profile = db.query(Profile).filter(Profile.user_id == user.id).first()
 
+    payload_data = payload.model_dump()
+    injured_body_parts = payload_data.pop("injured_body_parts", None)
+    injury_notes = payload_data.pop("injury_notes", None)
+    payload_data["health_diseases"] = _merge_health_with_injuries(
+        payload_data.get("health_diseases"),
+        injured_body_parts,
+        injury_notes,
+    )
+
     if profile:
-        for k, v in payload.model_dump().items():
-            setattr(profile, k, v)
-        # Update profile fields
-        for k, v in payload.model_dump().items():
+        for k, v in payload_data.items():
             if hasattr(profile, k):
                 setattr(profile, k, v)
     else:
@@ -62,7 +116,7 @@ def create_or_update_profile(
             user_id=user.id,
             bmi=bmi,
             bmi_category=category,
-            **payload.model_dump(),
+            **payload_data,
         )
         db.add(profile)
 
@@ -70,7 +124,9 @@ def create_or_update_profile(
     db.refresh(profile)
     _invalidate_weekly_plan_cache(user.id)
 
-    return ProfileOut(**profile.__dict__)
+    resp = dict(profile.__dict__)
+    resp.update(_extract_profile_injuries(getattr(profile, "health_diseases", "")))
+    return ProfileOut(**resp)
 
 
 # =========================================================
@@ -112,7 +168,9 @@ def get_profile(
         db.commit()
         db.refresh(profile)
 
-    return ProfileOut(**profile.__dict__)
+    resp = dict(profile.__dict__)
+    resp.update(_extract_profile_injuries(getattr(profile, "health_diseases", "")))
+    return ProfileOut(**resp)
 
 
 # =========================================================
@@ -164,6 +222,7 @@ def upload_medical_report(
         "diet_type": profile.diet_type,
         "lifestyle_level": profile.lifestyle_level,
         "health_diseases": profile.health_diseases,
+        "injured_body_parts": _extract_profile_injuries(profile.health_diseases).get("injured_body_parts", ""),
         "age": profile.age,
         "gender": profile.gender,
     })
@@ -223,6 +282,7 @@ def get_personalized_recommendations(
             "diet_type": profile.diet_type,
             "lifestyle_level": profile.lifestyle_level,
             "health_diseases": profile.health_diseases,
+            "injured_body_parts": _extract_profile_injuries(profile.health_diseases).get("injured_body_parts", ""),
             "age": profile.age,
             "gender": profile.gender,
         })
@@ -247,6 +307,7 @@ def get_personalized_recommendations(
             "diet_type": "vegetarian",
             "lifestyle_level": "sedentary",
             "health_diseases": "",
+            "injured_body_parts": "",
             "age": 30,
             "gender": "male",
         })
@@ -269,8 +330,16 @@ def get_ab_exercises(
 ):
     profile = db.query(Profile).filter(Profile.user_id == user.id).first()
     level = str(profile.lifestyle_level) if profile and profile.lifestyle_level else "sedentary"
-    
-    exercises = get_exercises(level, target_count=8, target_area="core")
+    injuries = _extract_profile_injuries(getattr(profile, "health_diseases", "")).get("injured_body_parts", "")
+    exercises = get_exercises(
+        level,
+        target_count=8,
+        target_area="core",
+        age=getattr(profile, "age", None),
+        weight_kg=getattr(profile, "weight_kg", None),
+        medical_conditions=_split_csv(getattr(profile, "health_diseases", "")),
+        injured_body_parts=_split_csv(injuries),
+    )
     
     return {
         "exercises": exercises,
@@ -297,12 +366,28 @@ def get_upper_body_exercises(
 ):
     profile = db.query(Profile).filter(Profile.user_id == user.id).first()
     level = str(profile.lifestyle_level) if profile and profile.lifestyle_level else "sedentary"
-    
-    exercises = get_exercises(level, target_count=10, target_area="upper body")
+    injuries = _extract_profile_injuries(getattr(profile, "health_diseases", "")).get("injured_body_parts", "")
+    exercises = get_exercises(
+        level,
+        target_count=10,
+        target_area="upper body",
+        age=getattr(profile, "age", None),
+        weight_kg=getattr(profile, "weight_kg", None),
+        medical_conditions=_split_csv(getattr(profile, "health_diseases", "")),
+        injured_body_parts=_split_csv(injuries),
+    )
     
     # Fallback: if no exercises returned, try without target_area filter
     if not exercises:
-        exercises = get_exercises(level, target_count=10, target_area="")
+        exercises = get_exercises(
+            level,
+            target_count=10,
+            target_area="",
+            age=getattr(profile, "age", None),
+            weight_kg=getattr(profile, "weight_kg", None),
+            medical_conditions=_split_csv(getattr(profile, "health_diseases", "")),
+            injured_body_parts=_split_csv(injuries),
+        )
     
     return {
         "exercises": exercises,
@@ -327,11 +412,27 @@ def get_full_body_exercises(
 ):
     profile = db.query(Profile).filter(Profile.user_id == user.id).first()
     level = str(profile.lifestyle_level) if profile and profile.lifestyle_level else "sedentary"
-    
-    exercises = get_exercises(level, target_count=12, target_area="full body")
+    injuries = _extract_profile_injuries(getattr(profile, "health_diseases", "")).get("injured_body_parts", "")
+    exercises = get_exercises(
+        level,
+        target_count=12,
+        target_area="full body",
+        age=getattr(profile, "age", None),
+        weight_kg=getattr(profile, "weight_kg", None),
+        medical_conditions=_split_csv(getattr(profile, "health_diseases", "")),
+        injured_body_parts=_split_csv(injuries),
+    )
     
     if not exercises:
-        exercises = get_exercises(level, target_count=12, target_area="")
+        exercises = get_exercises(
+            level,
+            target_count=12,
+            target_area="",
+            age=getattr(profile, "age", None),
+            weight_kg=getattr(profile, "weight_kg", None),
+            medical_conditions=_split_csv(getattr(profile, "health_diseases", "")),
+            injured_body_parts=_split_csv(injuries),
+        )
     
     return {
         "exercises": exercises,
@@ -357,11 +458,27 @@ def get_exercises_by_bodypart(
 ):
     profile = db.query(Profile).filter(Profile.user_id == user.id).first()
     level = str(profile.lifestyle_level) if profile and profile.lifestyle_level else "sedentary"
-    
-    exercises = get_exercises(level, target_count=10, target_area=bodypart)
+    injuries = _extract_profile_injuries(getattr(profile, "health_diseases", "")).get("injured_body_parts", "")
+    exercises = get_exercises(
+        level,
+        target_count=10,
+        target_area=bodypart,
+        age=getattr(profile, "age", None),
+        weight_kg=getattr(profile, "weight_kg", None),
+        medical_conditions=_split_csv(getattr(profile, "health_diseases", "")),
+        injured_body_parts=_split_csv(injuries),
+    )
     
     if not exercises:
-        exercises = get_exercises(level, target_count=10, target_area="")
+        exercises = get_exercises(
+            level,
+            target_count=10,
+            target_area="",
+            age=getattr(profile, "age", None),
+            weight_kg=getattr(profile, "weight_kg", None),
+            medical_conditions=_split_csv(getattr(profile, "health_diseases", "")),
+            injured_body_parts=_split_csv(injuries),
+        )
     
     return {
         "bodypart": bodypart,
