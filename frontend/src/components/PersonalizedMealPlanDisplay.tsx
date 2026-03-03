@@ -947,47 +947,32 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
     : 0;
   const waterTargetMl = getWaterTargetMl();
   const waterProgressPercent = Math.min(100, Math.round((waterMl / Math.max(1, waterTargetMl)) * 100));
-  const getLabTrend = (labName: string) =>
-    reportComparison.diseaseTrendAlerts.find((a) => normalizeText(a.lab) === normalizeText(labName));
-  const findLabValue = (...aliases: string[]): string | null => {
-    const entries = Object.entries(reportInsights.labs || {});
-    if (entries.length === 0) return null;
-    for (const alias of aliases) {
-      const normalizedAlias = normalizeText(alias);
-      const hit = entries.find(([k]) => normalizeText(k) === normalizedAlias);
-      if (hit && hit[1]) return String(hit[1]);
-    }
-    for (const alias of aliases) {
-      const normalizedAlias = normalizeText(alias);
-      const looseHit = entries.find(([k]) => {
-        const nk = normalizeText(k);
-        return nk.includes(normalizedAlias) || normalizedAlias.includes(nk);
-      });
-      if (looseHit && looseHit[1]) return String(looseHit[1]);
-    }
-    return null;
-  };
-  const bpTrend = getLabTrend('blood pressure');
-  const sugarTrend = getLabTrend('blood sugar');
-  const bpValue =
-    findLabValue('blood pressure', 'blood_pressure', 'bp') ||
-    userProfile?.medical_records?.blood_pressure ||
-    'Not available';
-  const sugarValue =
-    findLabValue('blood sugar', 'blood_sugar', 'glucose', 'fasting glucose', 'fbs', 'rbs') ||
-    userProfile?.medical_records?.blood_sugar ||
-    'Not available';
-  const weightGoalLabel = userProfile?.health_goals?.length ? userProfile.health_goals.join(', ') : 'General wellness';
-  const dietStyleLabel = realProfile?.diet_type ? String(realProfile.diet_type) : 'Not specified';
-  const bpStatusText = bpTrend ? (bpTrend.direction === 'up' ? 'Rising' : bpTrend.direction === 'down' ? 'Improving' : 'Stable') : 'Tracked';
-  const sugarStatusText = sugarTrend ? (sugarTrend.direction === 'up' ? 'Rising' : sugarTrend.direction === 'down' ? 'Improving' : 'Stable') : 'Tracked';
-  const bpStatusClass = bpTrend?.direction === 'down' ? 'good' : 'neutral';
-  const sugarStatusClass = sugarTrend?.direction === 'down' ? 'good' : 'neutral';
-  const comparisonAlertMeta = (level: 'warning' | 'good' | 'neutral') => {
-    if (level === 'warning') return { prefix: 'Alert' };
-    if (level === 'good') return { prefix: 'Improved' };
-    return { prefix: 'Stable' };
-  };
+  const avoidFoods = dedupe([
+    ...(userProfile?.foods_to_avoid || []),
+    ...(reportInsights.foodsToAvoid || [])
+  ]).slice(0, 14);
+  const dayProtein = Number(selectedDayPlan?.total_protein || 0);
+  const dayCalories = Number(selectedDayPlan?.total_calories || 0);
+  const avgFiber = (() => {
+    const all = mealTypes.flatMap((t) => selectedDayPlan?.meals?.[t] || []);
+    if (!all.length) return 0;
+    return all.reduce((sum, meal) => sum + Number((meal as any)?.fiber || 0), 0) / all.length;
+  })();
+  const smartTips = [
+    `Protein focus: target about ${Math.max(80, Math.round(dayProtein || Number(userProfile?.weight_kg || 70) * 1.2))} g/day to preserve muscle and improve satiety.`,
+    `Fiber support: aim for ${Math.max(20, Math.round(avgFiber * 4))} g/day from vegetables, legumes, and whole grains for glucose control and digestion.`,
+    `Calorie quality: keep your daily intake near ${Math.max(1400, Math.round(dayCalories || Number(realProfile?.daily_calories || 1800)))} kcal using minimally processed foods.`,
+    `Meal balance: each meal should include protein + fiber + smart carbs to reduce cravings and improve energy.`,
+  ];
+  const quoteBank = [
+    { quote: 'Eat to fuel your goals, not just your cravings.', benefit: 'Balanced meals improve consistency and long-term fat loss.' },
+    { quote: 'Healthy food is daily medicine for your future self.', benefit: 'Better nutrition helps blood pressure, glucose, and recovery.' },
+    { quote: 'Small food choices repeated daily create big results.', benefit: 'Habit-based eating reduces weight regain risk.' },
+    { quote: 'Colorful plates usually mean stronger micronutrient coverage.', benefit: 'More vitamins/minerals support immunity and energy.' },
+    { quote: 'Protein and fiber first, then carbs and fats.', benefit: 'This order improves fullness and appetite control.' },
+  ];
+  const daySeed = Math.max(0, daysOfWeek.indexOf(effectiveSelectedDay));
+  const selectedQuotes = [quoteBank[daySeed % quoteBank.length], quoteBank[(daySeed + 2) % quoteBank.length]];
 
   return (
     <div className="personalized-reco-shell" style={{ padding: '14px', maxWidth: '1320px', margin: '0 auto', fontFamily: 'Sora, sans-serif' }}>
@@ -1174,6 +1159,57 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
           font-size: 0.84rem;
           color: #e2e8f0;
           line-height: 1.45;
+        }
+        .avoid-chip-wrap {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 7px;
+        }
+        .avoid-chip {
+          font-size: 0.78rem;
+          font-weight: 700;
+          color: #fecaca;
+          border: 1px solid #ef4444;
+          background: rgba(127, 29, 29, 0.45);
+          border-radius: 999px;
+          padding: 4px 10px;
+        }
+        .smart-tip-list {
+          display: grid;
+          gap: 8px;
+        }
+        .smart-tip-item {
+          border-radius: 10px;
+          border: 1px solid #0f766e;
+          background: rgba(4, 47, 46, 0.45);
+          color: #ccfbf1;
+          padding: 9px 10px;
+          font-size: 0.82rem;
+          line-height: 1.45;
+          font-weight: 600;
+        }
+        .quote-list {
+          display: grid;
+          gap: 10px;
+        }
+        .quote-item {
+          border-radius: 10px;
+          border: 1px solid #b45309;
+          background: rgba(120, 53, 15, 0.4);
+          padding: 10px 11px;
+        }
+        .quote-text {
+          color: #fef3c7;
+          font-size: 0.84rem;
+          font-weight: 700;
+          line-height: 1.45;
+        }
+        .quote-benefit {
+          margin-top: 6px;
+          color: #fde68a;
+          font-size: 0.78rem;
+          line-height: 1.4;
+          opacity: 0.95;
         }
         .food-categories {
           display: grid;
@@ -1550,217 +1586,56 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
 
         {/* Personalized Notes Sidebar */}
         <div className="plan-side-card">
-          {/* Enhanced Header with Health Focus */}
           <div className="notes-header">
             <div className="notes-header-icon"></div>
             <div className="notes-header-content">
-              <h3 className="notes-title">Personalized Health Updates</h3>
+              <h3 className="notes-title">Eat Smart Guide</h3>
               <div className="day-focus">
                 <span className="day-label">{effectiveSelectedDay}</span>
-                <span className="focus-badge">Heart Health Focus</span>
+                <span className="focus-badge">Nutrition Focus</span>
               </div>
             </div>
           </div>
 
-          {/* Health Status Cards */}
-          <div className="health-status-grid">
-            <div className="health-card blood-pressure-card">
-              <div className="health-icon">💗</div>
-              <div className="health-content">
-                <div className="health-title">Blood Pressure</div>
-                <div className="health-value">{bpValue}</div>
-                <div className={`health-status ${bpStatusClass}`}>{bpStatusText}</div>
-                <div className="health-detail">{bpTrend ? `${bpTrend.previousValue} -> ${bpTrend.currentValue}` : 'Waiting for trend data from reports'}</div>
-              </div>
-            </div>
-
-            <div className="health-card blood-sugar-card">
-              <div className="health-icon">🩸</div>
-              <div className="health-content">
-                <div className="health-title">Blood Sugar</div>
-                <div className="health-value">{sugarValue}</div>
-                <div className={`health-status ${sugarStatusClass}`}>{sugarStatusText}</div>
-                <div className="health-detail">{sugarTrend ? `${sugarTrend.previousValue} -> ${sugarTrend.currentValue}` : 'Waiting for trend data from reports'}</div>
-              </div>
-            </div>
-
-            <div className="health-card weight-card">
-              <div className="health-icon">⚖️</div>
-              <div className="health-content">
-                <div className="health-title">Weight Goal</div>
-                <div className="health-value">{weightGoalLabel}</div>
-                <div className="health-status neutral">Active Goal</div>
-                <div className="health-detail">Current weight: {userProfile?.weight_kg ? `${userProfile.weight_kg} kg` : 'Not available'}</div>
-              </div>
-            </div>
-
-            <div className="health-card diet-card">
-              <div className="health-icon">🥗</div>
-              <div className="health-content">
-                <div className="health-title">Diet Style</div>
-                <div className="health-value">{dietStyleLabel}</div>
-                <div className="health-status neutral">Customized</div>
-                <div className="health-detail">Protein target: {selectedDayPlan?.total_protein ? `${Math.round(selectedDayPlan.total_protein)} g/day` : 'Calculated from plan'}</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Daily Recommendations */}
-          {(selectedDayPlan?.personalized_notes?.length || 0) > 0 && (
-            <div className="recommendations-section">
-              <div className="section-header recommendations-header">
-                <div className="section-icon">📋</div>
-                <h4 className="section-title">{effectiveSelectedDay} Meal Plan</h4>
-              </div>
-              <div className="recommendations-list">
-                {selectedDayPlan?.personalized_notes?.map((note: string, idx: number) => (
-                  <div key={idx} className="recommendation-item">
-                    <div className="recommendation-priority">
-                      <div className="priority-indicator high"></div>
-                      <span className="priority-text">Priority</span>
-                    </div>
-                    <div className="recommendation-content">
-                      {note}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="report-comparison-box">
-            <div className="note-box-title">Report Comparison Summary</div>
-            <p className="comparison-note">
-              {reportComparison.duplicateGroups.length > 0
-                ? `${reportComparison.duplicateReportsCount} report uploads match an earlier report.`
-                : 'No duplicate medical report uploads were found.'}
-              {reportComparison.latestIsDuplicate ? ' Latest upload appears to be already uploaded before.' : ''}
-            </p>
-            {reportComparison.duplicateGroups.length > 0 && (
-              <div className="comparison-list">
-                {reportComparison.duplicateGroups.slice(0, 3).map((group, idx) => (
-                  <div key={idx} className="comparison-item">
-                    Matching group: {group.filenames.join(', ')} ({group.count} uploads)
-                  </div>
-                ))}
-              </div>
-            )}
-            {reportComparison.diseaseTrendAlerts.length > 0 && (
-              <div className="comparison-list">
-                {reportComparison.diseaseTrendAlerts.slice(0, 6).map((alert, idx) => {
-                  const meta = comparisonAlertMeta(alert.level);
-                  return (
-                    <div key={`${alert.condition}-${alert.lab}-${idx}`} className={`comparison-item ${alert.level}`}>
-                      <div className="comparison-line">
-                        <span className="comparison-pill">{meta.prefix}</span>
-                        <span>
-                          <strong>{alert.condition}</strong> - {alert.lab} {alert.direction === 'up' ? 'went up' : alert.direction === 'down' ? 'fell down' : 'did not change'} ({alert.previousValue} {'->'} {alert.currentValue}{alert.changePercent !== null ? `, ${alert.changePercent > 0 ? '+' : ''}${alert.changePercent}%` : ''})
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Food Integration */}
-          <div className="food-integration-section">
-            <div className="section-header food-header">
-              <div className="section-icon">🍽</div>
-              <h4 className="section-title">Food Integration</h4>
-            </div>
-            
-            <div className="food-categories">
-              <div className="food-category included">
-                <div className="category-title">Included Foods</div>
-                <div className="food-tags">
-                  <span className="food-tag primary">🍛 Roti</span>
-                  <span className="food-tag primary">🍛 Curry</span>
-                  <span className="food-tag primary">🍛 Rice</span>
-                </div>
-              </div>
-
-              <div className="food-category avoided">
-                <div className="category-title">Avoid Foods</div>
-                <div className="food-tags">
-                  <span className="food-tag danger">🚫 Butter</span>
-                  <span className="food-tag danger">🚫 Sugary Drinks</span>
-                  <span className="food-tag danger">🚫 Chips</span>
-                  <span className="food-tag danger">🚫 Ice Cream</span>
-                  <span className="food-tag danger">🚫 Red Meat</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* User Profile Summary */}
-          <div className="note-box note-box--profile">
-            <div className="note-box-title">
-              Your Profile
-            </div>
+          <div className="note-box note-box--medical">
+            <div className="note-box-title">Foods to Avoid</div>
             <div className="note-box-content">
-              <div className="profile-grid">
-              <p className="profile-line">
-                <strong>Age:</strong> {userProfile?.age || 'Not specified'}
-              </p>
-              <p className="profile-line">
-                <strong>Weight:</strong> {userProfile?.weight_kg || 'Not specified'} kg
-              </p>
-              <p className="profile-line">
-                <strong>Height:</strong> {userProfile?.height_cm || 'Not specified'} cm
-              </p>
-              <p className="profile-line">
-                <strong>Activity Level:</strong> {userProfile?.lifestyle_level || 'Not specified'}
-              </p>
-              <p className="profile-line">
-                <strong>Health Goals:</strong> {userProfile?.health_goals?.join(', ') || 'Not specified'}
-              </p>
-              <p className="profile-line">
-                <strong>Dietary Restrictions:</strong> {userProfile?.dietary_restrictions?.join(', ') || 'None'}
-              </p>
-              {(userProfile?.allergies?.length || 0) > 0 && (
-                <p className="profile-line">
-                  <strong>Allergies:</strong> {userProfile?.allergies?.join(', ') || ''}
-                </p>
+              {avoidFoods.length > 0 ? (
+                <div className="avoid-chip-wrap">
+                  {avoidFoods.map((food, idx) => (
+                    <span key={`${food}-${idx}`} className="avoid-chip">{food}</span>
+                  ))}
+                </div>
+              ) : (
+                <span>No restricted foods logged.</span>
               )}
-              {(userProfile?.preferred_foods?.length || 0) > 0 && (
-                <p className="profile-line">
-                  <strong>Preferred Foods:</strong> {userProfile?.preferred_foods?.join(', ') || ''}
-                </p>
-              )}
-              {(userProfile?.foods_to_avoid?.length || 0) > 0 && (
-                <p className="profile-line">
-                  <strong>Foods to Avoid:</strong> {userProfile?.foods_to_avoid?.join(', ') || ''}
-                </p>
-              )}
+            </div>
+          </div>
+
+          <div className="note-box note-box--supplements">
+            <div className="note-box-title">Pro Tips (With Nutrition Benefits)</div>
+            <div className="note-box-content">
+              <div className="smart-tip-list">
+                {smartTips.map((tip, idx) => (
+                  <div key={idx} className="smart-tip-item">{tip}</div>
+                ))}
               </div>
             </div>
           </div>
 
-          {/* Medical Conditions */}
-          {(userProfile?.medical_conditions?.length || 0) > 0 && (
-            <div className="note-box note-box--medical">
-              <div className="note-box-title">
-                Medical Conditions
-              </div>
-              <div className="note-box-content">
-                {userProfile?.medical_conditions?.join(', ') || ''}
-              </div>
-            </div>
-          )}
-
-          {/* Supplements */}
-          {(userProfile?.supplements?.length || 0) > 0 && (
-            <div className="note-box note-box--supplements">
-              <div className="note-box-title">
-                Supplements
-              </div>
-              <div className="note-box-content">
-                {userProfile?.supplements?.join(', ') || ''}
+          <div className="note-box note-box--recommendations">
+            <div className="note-box-title">Motivation to Eat Healthy</div>
+            <div className="note-box-content">
+              <div className="quote-list">
+                {selectedQuotes.map((q, idx) => (
+                  <div key={idx} className="quote-item">
+                    <div className="quote-text">"{q.quote}"</div>
+                    <div className="quote-benefit">{q.benefit}</div>
+                  </div>
+                ))}
               </div>
             </div>
-          )}
+          </div>
         </div>
       </div>
           </>

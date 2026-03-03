@@ -76,7 +76,7 @@ export default function Dashboard() {
   const [macroLoading, setMacroLoading] = useState(true);
   const [macroError, setMacroError] = useState<string | null>(null);
   const [adherenceSummary, setAdherenceSummary] = useState<any>(null);
-  const [todayFoods, setTodayFoods] = useState<Array<{ name: string; calories: number; meal_type?: string; protein?: number; carbs?: number; fats?: number; item_count?: number }>>([]);
+  const [todayFoods, setTodayFoods] = useState<Array<{ name: string; calories: number; meal_type?: string; protein?: number; carbs?: number; fats?: number; item_count?: number; foods?: string[] }>>([]);
   const [todayFoodsLoading, setTodayFoodsLoading] = useState(true);
   const [todayFoodsError, setTodayFoodsError] = useState<string | null>(null);
   const [weeklyPlanMeals, setWeeklyPlanMeals] = useState<any>(null);
@@ -656,6 +656,62 @@ export default function Dashboard() {
     ? adherence7.map((d: any) => Number(d.workout_calories_burned || 0))
     : recentDates.map(() => Number(todayWorkoutCalories || currentWorkoutBurned || 0));
   const workout7Pct = workout7.map((x: { completed: boolean }) => (x.completed ? 100 : 0));
+  const sleepHours7Raw: number[] = adherence7.length > 0
+    ? adherence7.map((d: any) => Number(d.sleep_hours ?? d.sleepHours ?? 0))
+    : [];
+  const sleepTargetHours7Raw: number[] = adherence7.length > 0
+    ? adherence7.map((d: any) => Number(d.sleep_target_hours ?? d.sleepTargetHours ?? 7.5))
+    : [];
+  const sleepHours7 = sleepHours7Raw.map((h: number) => (Number.isFinite(h) && h > 0 ? h : 7));
+  const sleepTargetHours7 = sleepTargetHours7Raw.map((h: number) => (Number.isFinite(h) && h > 0 ? h : 7.5));
+  const stressRaw7: number[] = adherence7.length > 0
+    ? adherence7.map((d: any) => Number(d.stress_level ?? d.stress_score ?? d.stress ?? 0))
+    : [];
+  const hasSleepLogs = sleepHours7Raw.some((h: number) => Number.isFinite(h) && h > 0);
+  const hasStressLogs = stressRaw7.some((s: number) => Number.isFinite(s) && s > 0);
+  const normalizeStressTo100 = (v: number) => {
+    if (!Number.isFinite(v) || v <= 0) return 50;
+    if (v <= 10) return v * 10;
+    return Math.max(0, Math.min(100, v));
+  };
+  const stress7 = stressRaw7.map((v: number) => normalizeStressTo100(v));
+  const average = (arr: number[], fallback = 0) => {
+    if (!arr.length) return fallback;
+    const vals = arr.filter((x) => Number.isFinite(x));
+    if (!vals.length) return fallback;
+    return vals.reduce((s, x) => s + x, 0) / vals.length;
+  };
+  const stdDev = (arr: number[]) => {
+    if (arr.length < 2) return 0;
+    const avg = average(arr, 0);
+    const variance = arr.reduce((s, x) => s + ((x - avg) ** 2), 0) / arr.length;
+    return Math.sqrt(Math.max(0, variance));
+  };
+  const foodProgress7 = adherence7.length > 0
+    ? adherence7.map((d: any) => Number(d.food_progress_percent || 0))
+    : recentDates.map(() => consistencyScore);
+  const adherenceCompositePct = Math.max(0, Math.min(100, (
+    (average(foodProgress7, consistencyScore) * 0.45) +
+    (average(water7, fallbackWaterPct) * 0.35) +
+    (average(workout7Pct, 0) * 0.2)
+  )));
+  const sleepAvgHours = average(sleepHours7, 7);
+  const sleepTargetAvgHours = Math.max(6.5, average(sleepTargetHours7, 7.5));
+  const sleepQualityPct = Math.max(0, Math.min(100, (sleepAvgHours / sleepTargetAvgHours) * 100));
+  const stressAvgPct = average(stress7, 50);
+  const hydrationVolatilityPct = stdDev(water7);
+  const hydrationStabilityPct = Math.max(0, Math.min(100, 100 - Math.min(60, hydrationVolatilityPct)));
+  const readinessComponents = [
+    { value: adherenceCompositePct, weight: 0.45 },
+    { value: hydrationStabilityPct, weight: 0.2 },
+    ...(hasSleepLogs ? [{ value: sleepQualityPct, weight: 0.25 }] : []),
+    ...(hasStressLogs ? [{ value: 100 - stressAvgPct, weight: 0.1 }] : []),
+  ];
+  const readinessWeightSum = readinessComponents.reduce((s, c) => s + c.weight, 0);
+  const behaviorReadinessPct = readinessWeightSum > 0
+    ? Math.max(0, Math.min(100, readinessComponents.reduce((s, c) => s + (c.value * c.weight), 0) / readinessWeightSum))
+    : 0;
+  const behaviorPaceMultiplier = Math.max(0.65, Math.min(1.35, 0.7 + (behaviorReadinessPct / 100) * 0.65));
 
   const trendDirection = (values: number[]) => {
     if (!values.length) return 'flat';
@@ -702,9 +758,11 @@ export default function Dashboard() {
     if (progressList.length < 2) return activeGoalFatLoss ? 0.5 : 0.25;
     const first = Number(progressList[0].weight_kg || 0);
     const last = Number(progressList[progressList.length - 1].weight_kg || 0);
+    const prev = Number(progressList[progressList.length - 2]?.weight_kg || first);
     const periods = Math.max(1, progressList.length - 1); // month-ish points
     const observedMonthly = Math.abs((last - first) / periods);
-    const observedWeekly = observedMonthly / 4;
+    const recentObservedMonthly = Math.abs(last - prev);
+    const observedWeekly = ((recentObservedMonthly * 0.7) + (observedMonthly * 0.3)) / 4;
     const defaultWeekly = activeGoalFatLoss ? 0.5 : 0.25;
     return Math.max(0.2, Math.min(1.0, observedWeekly || defaultWeekly));
   })();
@@ -723,19 +781,206 @@ export default function Dashboard() {
       if (weeks >= 8) return `${Math.ceil(weeks / 4)} month(s)`;
       return `${weeks} week(s)`;
     };
-    const buildMonthlyProjection = (startWeight: number, targetWeight: number, etaWeeks: number) => {
-      const etaMonths = etaWeeks <= 0 ? 0 : Math.max(1, Math.min(12, Math.ceil(etaWeeks / 4)));
+    const trainWeightRegressionModel = (history: number[]) => {
+      if (history.length < 5) return null;
+      const samples: Array<{ x: number[]; y: number }> = [];
+      for (let i = 2; i < history.length - 1; i += 1) {
+        const wPrev2 = Number(history[i - 2] || 0);
+        const wPrev1 = Number(history[i - 1] || 0);
+        const wCurr = Number(history[i] || 0);
+        const wNext = Number(history[i + 1] || 0);
+        if (![wPrev2, wPrev1, wCurr, wNext].every((v) => Number.isFinite(v) && v > 0)) continue;
+        const paceRecent = wCurr - wPrev1;
+        const pacePrior = wPrev1 - wPrev2;
+        const paceAvg = (paceRecent + pacePrior) / 2;
+        samples.push({
+          x: [1, wCurr, paceRecent, paceAvg],
+          y: wNext
+        });
+      }
+      if (samples.length < 2) return null;
+
+      const means = [0, 0, 0, 0];
+      const stds = [1, 1, 1, 1];
+      for (let f = 1; f <= 3; f += 1) {
+        const vals = samples.map((s) => s.x[f]);
+        const mean = vals.reduce((sum, v) => sum + v, 0) / vals.length;
+        const variance = vals.reduce((sum, v) => sum + (v - mean) ** 2, 0) / vals.length;
+        means[f] = mean;
+        stds[f] = Math.max(1e-6, Math.sqrt(variance));
+      }
+      const norm = (raw: number[]): number[] => [
+        raw[0],
+        (raw[1] - means[1]) / stds[1],
+        (raw[2] - means[2]) / stds[2],
+        (raw[3] - means[3]) / stds[3]
+      ];
+      const normalized = samples.map((s) => ({ x: norm(s.x), y: s.y }));
+
+      let w = [0, 0, 0, 0];
+      const lr = 0.035;
+      const lambda = 0.02;
+      for (let epoch = 0; epoch < 1200; epoch += 1) {
+        const grad = [0, 0, 0, 0];
+        for (const s of normalized) {
+          const pred = w[0] * s.x[0] + w[1] * s.x[1] + w[2] * s.x[2] + w[3] * s.x[3];
+          const err = pred - s.y;
+          grad[0] += err * s.x[0];
+          grad[1] += err * s.x[1];
+          grad[2] += err * s.x[2];
+          grad[3] += err * s.x[3];
+        }
+        const m = normalized.length;
+        w = w.map((weight, idx) => {
+          const ridge = idx === 0 ? 0 : lambda * weight;
+          return weight - lr * ((grad[idx] / m) + ridge);
+        });
+      }
+
+      const predictNext = (wPrev2: number, wPrev1: number, wCurr: number) => {
+        const paceRecent = wCurr - wPrev1;
+        const pacePrior = wPrev1 - wPrev2;
+        const paceAvg = (paceRecent + pacePrior) / 2;
+        const x = norm([1, wCurr, paceRecent, paceAvg]);
+        const out = w[0] * x[0] + w[1] * x[1] + w[2] * x[2] + w[3] * x[3];
+        return Number.isFinite(out) ? out : wCurr;
+      };
+
+      return { predictNext };
+    };
+    const trainWeightedTrendModel = (history: number[]) => {
+      if (history.length < 3) return null;
+      const points = history
+        .map((w, idx) => ({ x: idx, y: Number(w || 0), wt: idx + 1 }))
+        .filter((p) => Number.isFinite(p.y) && p.y > 0);
+      if (points.length < 3) return null;
+
+      const sw = points.reduce((s, p) => s + p.wt, 0);
+      const sx = points.reduce((s, p) => s + (p.wt * p.x), 0);
+      const sy = points.reduce((s, p) => s + (p.wt * p.y), 0);
+      const sxx = points.reduce((s, p) => s + (p.wt * p.x * p.x), 0);
+      const sxy = points.reduce((s, p) => s + (p.wt * p.x * p.y), 0);
+      const denom = (sw * sxx) - (sx * sx);
+      if (Math.abs(denom) < 1e-6) return null;
+
+      const slope = ((sw * sxy) - (sx * sy)) / denom;
+      const intercept = (sy - (slope * sx)) / sw;
+      const predictAt = (x: number) => intercept + (slope * x);
+      return { predictAt };
+    };
+    const buildPredictionModel = (history: number[]) => {
+      const safeHistory = history.filter((w) => Number.isFinite(w) && w > 0);
+      const arModel = trainWeightRegressionModel(safeHistory);
+      const trendModel = trainWeightedTrendModel(safeHistory);
+      const historyLen = safeHistory.length;
+      const volatility = safeHistory.length >= 2
+        ? safeHistory
+            .slice(1)
+            .map((w, i) => Math.abs(w - safeHistory[i]))
+            .reduce((sum, v) => sum + v, 0) / (safeHistory.length - 1)
+        : 0.5;
+
+      const weights = (() => {
+        if (historyLen >= 8 && arModel) return { ar: 0.5, trend: 0.35, momentum: 0.15 };
+        if (historyLen >= 5 && arModel) return { ar: 0.4, trend: 0.3, momentum: 0.3 };
+        return { ar: 0, trend: trendModel ? 0.45 : 0, momentum: trendModel ? 0.55 : 1.0 };
+      })();
+
+      const predictNext = (wPrev2: number, wPrev1: number, wCurr: number, monthIndex: number) => {
+        const paceRecent = wCurr - wPrev1;
+        const pacePrior = wPrev1 - wPrev2;
+        const paceAvg = (paceRecent + pacePrior) / 2;
+        const momentumPred = wCurr + (paceRecent * 0.65) + (paceAvg * 0.35);
+        const arPred = arModel ? arModel.predictNext(wPrev2, wPrev1, wCurr) : NaN;
+        const trendPred = trendModel ? trendModel.predictAt(monthIndex + 1) : NaN;
+
+        let pred = 0;
+        let total = 0;
+        if (Number.isFinite(arPred)) {
+          pred += arPred * weights.ar;
+          total += weights.ar;
+        }
+        if (Number.isFinite(trendPred)) {
+          pred += trendPred * weights.trend;
+          total += weights.trend;
+        }
+        if (Number.isFinite(momentumPred)) {
+          pred += momentumPred * weights.momentum;
+          total += weights.momentum;
+        }
+        const blended = total > 0 ? pred / total : wCurr;
+        const paceGuard = Math.max(0.6, Math.min(3.5, (volatility * 1.8) || 1.0));
+        const delta = blended - wCurr;
+        return wCurr + Math.max(-paceGuard, Math.min(paceGuard, delta));
+      };
+
+      return { predictNext };
+    };
+
+    const buildMonthlyProjection = (
+      startWeight: number,
+      targetWeight: number,
+      etaWeeks: number,
+      historyWeights: number[]
+    ) => {
+      const etaMonths = etaWeeks <= 0 ? 0 : Math.max(1, Math.min(24, Math.ceil(etaWeeks / 4)));
       const totalSteps = Math.max(1, etaMonths);
-      const deltaPerStep = (targetWeight - startWeight) / totalSteps;
       const points: Array<{ label: string; weight: number }> = [];
       const monthFmt = new Intl.DateTimeFormat('en-US', { month: 'short' });
       const now = new Date();
+      const safeHistory = historyWeights.filter((w) => Number.isFinite(w) && w > 0);
+      const model = buildPredictionModel(safeHistory);
+      const trendStep = (targetWeight - startWeight) / totalSteps;
+      const adjustedTrendStep = trendStep * behaviorPaceMultiplier;
+      const observedMonthlyPace = safeHistory.length >= 2
+        ? safeHistory
+            .slice(1)
+            .map((w, i) => Math.abs(w - safeHistory[i]))
+            .reduce((sum, v) => sum + v, 0) / (safeHistory.length - 1)
+        : Math.abs(trendStep);
+      const maxMonthlyMove = Math.max(0.5, Math.min(4.0, observedMonthlyPace * 1.5 || Math.abs(trendStep)));
+      const movingDown = targetWeight < startWeight;
+      const minMonthlyMove = 0.1;
 
       points.push({ label: monthFmt.format(now), weight: Number(startWeight.toFixed(1)) });
-      for (let i = 1; i <= etaMonths; i += 1) {
-        const projected = startWeight + deltaPerStep * i;
+      const projectionHistory = safeHistory.length ? [...safeHistory] : [startWeight];
+      if (Math.abs(projectionHistory[projectionHistory.length - 1] - startWeight) > 0.01) {
+        projectionHistory.push(startWeight);
+      }
+      const hardCapMonths = 24;
+      for (let i = 1; i <= hardCapMonths; i += 1) {
+        const last = Number(projectionHistory[projectionHistory.length - 1] || startWeight);
+        const prev1 = Number(projectionHistory[projectionHistory.length - 2] || last);
+        const prev2 = Number(projectionHistory[projectionHistory.length - 3] || prev1);
+
+        const monthIndex = projectionHistory.length - 1;
+        const modelProjected = model.predictNext(prev2, prev1, last, monthIndex);
+        let projected = (modelProjected * 0.8) + ((last + adjustedTrendStep) * 0.2);
+
+        const rawChange = projected - last;
+        const boundedChange = Math.max(-maxMonthlyMove, Math.min(maxMonthlyMove, rawChange));
+        projected = last + boundedChange;
+
+        if (movingDown) {
+          projected = Math.min(projected, last - minMonthlyMove);
+          projected = Math.max(projected, targetWeight);
+        } else if (targetWeight > startWeight) {
+          projected = Math.max(projected, last + minMonthlyMove);
+          projected = Math.min(projected, targetWeight);
+        }
+
         const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-        points.push({ label: monthFmt.format(d), weight: Number(projected.toFixed(1)) });
+        const rounded = Number(projected.toFixed(1));
+        points.push({ label: monthFmt.format(d), weight: rounded });
+        projectionHistory.push(rounded);
+
+        const reachedTarget = movingDown
+          ? rounded <= targetWeight + 0.1
+          : rounded >= targetWeight - 0.1;
+        const metEtaHorizon = i >= etaMonths;
+        if (reachedTarget && metEtaHorizon) {
+          break;
+        }
       }
       if (points.length === 1) {
         const d = new Date(now.getFullYear(), now.getMonth() + 1, 1);
@@ -743,22 +988,98 @@ export default function Dashboard() {
       }
       return points;
     };
+    const estimateEtaWeeks = (
+      startWeight: number,
+      targetWeight: number,
+      historyWeights: number[],
+      fallbackWeeks: number
+    ) => {
+      if (!Number.isFinite(startWeight) || !Number.isFinite(targetWeight)) {
+        return Math.max(0, Math.min(104, Math.round(fallbackWeeks || 0)));
+      }
+      if (Math.abs(startWeight - targetWeight) <= 0.1) return 0;
+
+      const safeHistory = historyWeights.filter((w) => Number.isFinite(w) && w > 0);
+      const model = buildPredictionModel(safeHistory);
+      const etaMonthsBase = fallbackWeeks <= 0 ? 1 : Math.max(1, Math.ceil(fallbackWeeks / 4));
+      const trendStep = (targetWeight - startWeight) / etaMonthsBase;
+      const adjustedTrendStep = trendStep * behaviorPaceMultiplier;
+      const observedMonthlyPace = safeHistory.length >= 2
+        ? safeHistory
+            .slice(1)
+            .map((w, i) => Math.abs(w - safeHistory[i]))
+            .reduce((sum, v) => sum + v, 0) / (safeHistory.length - 1)
+        : Math.abs(trendStep);
+      const maxMonthlyMove = Math.max(0.5, Math.min(4.0, observedMonthlyPace * 1.5 || Math.abs(trendStep)));
+      const minMonthlyMove = 0.1;
+      const projectionHistory = safeHistory.length ? [...safeHistory] : [startWeight];
+      if (Math.abs(projectionHistory[projectionHistory.length - 1] - startWeight) > 0.01) {
+        projectionHistory.push(startWeight);
+      }
+
+      const movingDown = targetWeight < startWeight;
+      const horizonMonths = 26; // up to ~2 years
+      for (let month = 1; month <= horizonMonths; month += 1) {
+        const last = Number(projectionHistory[projectionHistory.length - 1] || startWeight);
+        const prev1 = Number(projectionHistory[projectionHistory.length - 2] || last);
+        const prev2 = Number(projectionHistory[projectionHistory.length - 3] || prev1);
+
+        const monthIndex = projectionHistory.length - 1;
+        const modelProjected = model.predictNext(prev2, prev1, last, monthIndex);
+        let projected = (modelProjected * 0.8) + ((last + adjustedTrendStep) * 0.2);
+
+        const rawChange = projected - last;
+        let boundedChange = Math.max(-maxMonthlyMove, Math.min(maxMonthlyMove, rawChange));
+        if (movingDown) boundedChange = Math.min(boundedChange, -minMonthlyMove);
+        else boundedChange = Math.max(boundedChange, minMonthlyMove);
+
+        const next = Number((last + boundedChange).toFixed(2));
+        projectionHistory.push(next);
+
+        if (movingDown && next <= targetWeight + 0.1) return Math.min(104, month * 4);
+        if (!movingDown && next >= targetWeight - 0.1) return Math.min(104, month * 4);
+      }
+
+      return Math.max(4, Math.min(104, Math.round(fallbackWeeks || 104)));
+    };
     const fatLossStartWeight = Math.max(currentWeight, baseWeight, highestHistoricalWeight);
     const fatLossTotalGap = Math.max(0.1, fatLossStartWeight - idealWeightKg);
     const fatLossProgressPct = Math.max(0, Math.min(100, ((fatLossTotalGap - fatLossRemainingKg) / fatLossTotalGap) * 100));
     const muscleGainStartWeight = Math.min(currentWeight, baseWeight, lowestHistoricalWeight);
     const muscleGainTotalGap = Math.max(0.1, muscleTargetWeight - muscleGainStartWeight);
     const muscleGainProgressPct = Math.max(0, Math.min(100, ((muscleGainTotalGap - muscleGainRemainingKg) / muscleGainTotalGap) * 100));
+    const fatLossEtaMlWeeks = estimateEtaWeeks(currentWeight, idealWeightKg, historicalWeights, fatLossEtaWeeks);
+    const muscleEtaMlWeeks = estimateEtaWeeks(currentWeight, muscleTargetWeight, historicalWeights, muscleEtaWeeks);
+    const previousWeight = (() => {
+      if (historicalWeights.length >= 1) return Number(historicalWeights[historicalWeights.length - 1]);
+      return currentWeight;
+    })();
+    const paceMonthlyKg = (() => {
+      if (historicalWeights.length >= 2) {
+        const last = Number(historicalWeights[historicalWeights.length - 1] || currentWeight);
+        const prev = Number(historicalWeights[historicalWeights.length - 2] || last);
+        return last - prev;
+      }
+      if (historicalWeights.length === 1) return currentWeight - Number(historicalWeights[0] || currentWeight);
+      return 0;
+    })();
+    const paceDirection = paceMonthlyKg < 0 ? 'down' : paceMonthlyKg > 0 ? 'up' : 'flat';
+    const paceText = `Pace ${Math.abs(paceMonthlyKg).toFixed(1)} kg/month (${paceDirection})`;
+    const previousText = `Previous ${Number(previousWeight || currentWeight).toFixed(1)} kg`;
+    const hydrationText = `Hydration fluctuation ${hydrationVolatilityPct.toFixed(0)}% (stability ${hydrationStabilityPct.toFixed(0)}%)`;
     if (activeGoalFatLoss && !activeGoalMuscleGain) {
       return [
         {
           key: 'fat-loss',
           title: 'Fat Loss',
           targetText: `Target ${idealWeightKg.toFixed(1)} kg | Current ${currentWeight.toFixed(1)} kg`,
+          previousText,
+          paceText,
+          hydrationText,
           remainingText: `Remaining ${fatLossRemainingKg.toFixed(1)} kg`,
-          etaText: etaLabel(fatLossEtaWeeks),
+          etaText: etaLabel(fatLossEtaMlWeeks),
           progressPct: fatLossProgressPct,
-          monthlyProjection: buildMonthlyProjection(currentWeight, idealWeightKg, fatLossEtaWeeks)
+          monthlyProjection: buildMonthlyProjection(currentWeight, idealWeightKg, fatLossEtaMlWeeks, historicalWeights)
         }
       ];
     }
@@ -768,10 +1089,13 @@ export default function Dashboard() {
           key: 'muscle-gain',
           title: 'Muscle Gain',
           targetText: `Target ${muscleTargetWeight.toFixed(1)} kg | Current ${currentWeight.toFixed(1)} kg`,
+          previousText,
+          paceText,
+          hydrationText,
           remainingText: `Remaining ${muscleGainRemainingKg.toFixed(1)} kg`,
-          etaText: etaLabel(muscleEtaWeeks),
+          etaText: etaLabel(muscleEtaMlWeeks),
           progressPct: muscleGainProgressPct,
-          monthlyProjection: buildMonthlyProjection(currentWeight, muscleTargetWeight, muscleEtaWeeks)
+          monthlyProjection: buildMonthlyProjection(currentWeight, muscleTargetWeight, muscleEtaMlWeeks, historicalWeights)
         }
       ];
     }
@@ -780,10 +1104,13 @@ export default function Dashboard() {
         key: 'fat-loss',
         title: 'Fat Loss',
         targetText: `Target ${idealWeightKg.toFixed(1)} kg | Current ${currentWeight.toFixed(1)} kg`,
+        previousText,
+        paceText,
+        hydrationText,
         remainingText: `Remaining ${fatLossRemainingKg.toFixed(1)} kg`,
-        etaText: etaLabel(fatLossEtaWeeks),
+        etaText: etaLabel(fatLossEtaMlWeeks),
         progressPct: fatLossProgressPct,
-        monthlyProjection: buildMonthlyProjection(currentWeight, idealWeightKg, fatLossEtaWeeks)
+        monthlyProjection: buildMonthlyProjection(currentWeight, idealWeightKg, fatLossEtaMlWeeks, historicalWeights)
       }
     ];
   })();
@@ -1176,7 +1503,7 @@ export default function Dashboard() {
                     <div className="trend-value">{valueText}</div>
                     <div className="trend-meta">{item.meta}</div>
                     <div className="trend-sparkline">
-                      {item.values.map((val, idx) => {
+                      {item.values.map((val: number, idx: number) => {
                         const height = Math.max(4, (val / maxVal) * 100);
                         return (
                           <div key={idx} className="sparkline-bar" style={{ height: `${height}%` }} />
@@ -1204,6 +1531,9 @@ export default function Dashboard() {
                     <span className="goal-badge">Active</span>
                   </div>
                   <div className="goal-line">{goal.targetText}</div>
+                  <div className="goal-line">{goal.previousText}</div>
+                  <div className="goal-line">{goal.paceText}</div>
+                  <div className="goal-line">{goal.hydrationText}</div>
                   <div className="goal-line">{goal.remainingText}</div>
                   <div className="goal-progress-rail">
                     <div className="goal-progress-fill" style={{ width: `${goal.progressPct.toFixed(0)}%` }} />
@@ -1220,13 +1550,13 @@ export default function Dashboard() {
                             {
                               label: 'Projected Weight',
                               data: goal.monthlyProjection.map((point: { label: string; weight: number }) => point.weight),
-                              borderColor: '#22c55e',
-                              backgroundColor: 'rgba(34, 197, 94, 0.25)',
+                              borderColor: '#60a5fa',
+                              backgroundColor: 'rgba(96, 165, 250, 0.24)',
                               borderWidth: 3,
                               pointRadius: 4,
                               pointHoverRadius: 6,
                               pointBackgroundColor: '#ffffff',
-                              pointBorderColor: '#22c55e',
+                              pointBorderColor: '#60a5fa',
                               pointBorderWidth: 2,
                               tension: 0.35,
                               fill: true
@@ -1252,7 +1582,7 @@ export default function Dashboard() {
                             y: {
                               grid: { color: 'rgba(148, 163, 184, 0.12)' },
                               ticks: {
-                                color: '#6ee7b7',
+                                color: '#93c5fd',
                                 font: { size: 11, weight: 700 },
                                 callback: (val) => `${val} kg`
                               }
@@ -1983,26 +2313,26 @@ const cssStyles = `
   overflow: hidden;
 }
 .goal-item.active {
-  border-color: rgba(74, 222, 128, 0.48);
-  background: linear-gradient(165deg, rgba(34, 197, 94, 0.18), rgba(20, 83, 45, 0.16));
+  border-color: rgba(148, 163, 184, 0.36);
+  background: linear-gradient(165deg, rgba(30, 41, 59, 0.62), rgba(15, 23, 42, 0.7));
 }
 .goal-progress-card {
-  background: linear-gradient(160deg, rgba(16, 185, 129, 0.16), rgba(5, 150, 105, 0.12));
-  border-color: rgba(52, 211, 153, 0.36);
-  box-shadow: 0 24px 36px -30px rgba(16, 185, 129, 0.5);
+  background: transparent;
+  border-color: var(--line);
+  box-shadow: none;
 }
 .goal-progress-card .card-header h3 {
-  color: #d1fae5;
+  color: #e2e8f0;
 }
 .goal-progress-card .badge {
-  background: rgba(52, 211, 153, 0.22);
-  color: #a7f3d0;
+  background: rgba(148, 163, 184, 0.2);
+  color: #cbd5e1;
 }
 .goal-head {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   gap: 8px;
 }
 .goal-head h4 {
@@ -2014,23 +2344,24 @@ const cssStyles = `
 .goal-badge {
   font-size: 0.62rem;
   text-transform: uppercase;
-  background: rgba(74, 222, 128, 0.2);
-  color: #bbf7d0;
+  background: rgba(148, 163, 184, 0.2);
+  color: #cbd5e1;
   border-radius: 999px;
   padding: 4px 9px;
   font-weight: 800;
 }
 .goal-line {
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   color: var(--muted);
-  margin-top: 4px;
+  margin-top: 2px;
   font-weight: 600;
+  line-height: 1.25;
 }
 .goal-progress-rail {
   height: 8px;
   border-radius: 999px;
   background: rgba(148, 163, 184, 0.24);
-  margin-top: 10px;
+  margin-top: 8px;
   overflow: hidden;
 }
 .goal-progress-fill {
@@ -2040,15 +2371,15 @@ const cssStyles = `
   transition: width 0.35s ease;
 }
 .goal-progress-meta {
-  margin-top: 6px;
+  margin-top: 5px;
   font-size: 0.74rem;
   color: var(--muted);
   font-weight: 700;
 }
 .goal-eta {
-  margin-top: 6px;
+  margin-top: 4px;
   font-size: 0.8rem;
-  color: #86efac;
+  color: #cbd5e1;
   font-weight: 800;
 }
 .goal-monthly-title {
@@ -2060,20 +2391,20 @@ const cssStyles = `
   text-transform: uppercase;
 }
 .goal-chart-pane {
-  border: 1px solid rgba(16, 185, 129, 0.2);
+  border: 1px solid rgba(148, 163, 184, 0.3);
   border-radius: 10px;
-  background: rgba(16, 185, 129, 0.06);
-  padding: 10px;
+  background: rgba(15, 23, 42, 0.6);
+  padding: 9px;
   display: flex;
   flex-direction: column;
   min-width: 0;
   overflow: hidden;
-  margin-top: 10px;
+  margin-top: 8px;
 }
 .goal-chart-pane.featured {
-  background: linear-gradient(160deg, rgba(4, 47, 46, 0.8), rgba(20, 83, 45, 0.78), rgba(15, 23, 42, 0.88));
-  border-color: rgba(110, 231, 183, 0.5);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 14px 24px -20px rgba(16, 185, 129, 0.55);
+  background: linear-gradient(155deg, rgba(2, 6, 23, 0.96), rgba(15, 23, 42, 0.92), rgba(30, 41, 59, 0.88));
+  border-color: rgba(148, 163, 184, 0.38);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 14px 24px -20px rgba(15, 23, 42, 0.7);
 }
 .goal-mini-chart {
   position: relative;
@@ -2088,21 +2419,21 @@ const cssStyles = `
   max-width: 100% !important;
 }
 .goal-projection-strip {
-  margin-top: 10px;
+  margin-top: 8px;
   display: flex;
-  gap: 8px;
+  gap: 6px;
   overflow-x: auto;
   padding-bottom: 2px;
 }
 .goal-projection-pill {
   flex: 0 0 auto;
-  min-width: 86px;
+  min-width: 82px;
   border-radius: 10px;
   border: 1px solid rgba(148, 163, 184, 0.3);
-  background: rgba(15, 23, 42, 0.55);
-  padding: 7px 9px;
+  background: rgba(15, 23, 42, 0.62);
+  padding: 6px 8px;
   display: grid;
-  gap: 3px;
+  gap: 2px;
 }
 .projection-month {
   color: #fbbf24;
@@ -2112,7 +2443,7 @@ const cssStyles = `
   letter-spacing: 0.04em;
 }
 .projection-weight {
-  color: #6ee7b7;
+  color: #cbd5e1;
   font-size: 0.76rem;
   font-weight: 800;
 }

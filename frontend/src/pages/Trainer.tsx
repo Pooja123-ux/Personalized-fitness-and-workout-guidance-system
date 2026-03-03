@@ -22,6 +22,17 @@ type ExerciseConfig = {
   ii: boolean; hs: number; sy: string;
 }
 
+type WorkoutPlanItem = {
+  name: string
+  repetitions?: string
+  gif_url?: string
+  gifUrl?: string
+  target?: string
+  sets?: number | string
+  reps?: string | number
+  calories_burned?: number
+}
+
 // MediaPipe landmark indices
 const LM = {
   nose:0, l_shoulder:11, r_shoulder:12,
@@ -163,7 +174,7 @@ function Trainer() {
   const [targetDurationSec, setTargetDurationSec] = useState<number | null>(null)
   const [holdElapsedSec, setHoldElapsedSec]     = useState(0)
   const [voiceEnabled, setVoiceEnabled]         = useState(false)
-  const [plan, setPlan]                         = useState<Array<{name:string;repetitions:string;gif_url:string}>>([])
+  const [plan, setPlan]                         = useState<WorkoutPlanItem[]>([])
   const [instructions, setInstructions]         = useState<string[]>([])
   const [poseHints, setPoseHints]               = useState<any>(null)
   const [exerciseMetadata, setExerciseMetadata] = useState<any>(null)
@@ -186,6 +197,8 @@ function Trainer() {
 
   const streamRef = useRef<MediaStream | null>(null)
   const poseRef   = useRef<Pose | null>(null)
+
+  const currentPlanItem = plan[idx] || plan.find((p) => p.name === exerciseName)
 
   // ──────────────────────────────────────────────────
   // Load the exercise dataset lookup on mount
@@ -423,12 +436,43 @@ function Trainer() {
   // ──────────────────────────────────────────────────
   // NAVIGATION
   // ──────────────────────────────────────────────────
-  function goToIndex(i: number, p: Array<{name:string;repetitions:string;gif_url:string}>) {
+  function getPlanRepetitions(item: WorkoutPlanItem): string {
+    if (item.repetitions) return item.repetitions
+    const sets = String(item.sets ?? '').trim()
+    const reps = String(item.reps ?? '').trim()
+    if (sets && reps) return `${sets}x${reps}`
+    return ''
+  }
+
+  function getPlanGif(item: WorkoutPlanItem): string {
+    return item.gif_url || item.gifUrl || ''
+  }
+
+  function parseSetCount(value: string | number | undefined): number | null {
+    const n = parseInt(String(value ?? '').trim(), 10)
+    return Number.isFinite(n) && n > 0 ? n : null
+  }
+
+  function parseRepCount(value: string | number | undefined): number | null {
+    const text = String(value ?? '').toLowerCase().trim()
+    if (!text) return null
+    const range = text.match(/(\d+)\s*(?:-|to)\s*(\d+)/)
+    if (range) {
+      const hi = parseInt(range[2], 10)
+      return Number.isFinite(hi) ? hi : null
+    }
+    const first = text.match(/(\d+)/)
+    if (!first) return null
+    const n = parseInt(first[1], 10)
+    return Number.isFinite(n) ? n : null
+  }
+
+  function goToIndex(i: number, p: WorkoutPlanItem[]) {
     const next = p[i]
     if (!next) return
     advancingRef.current = false
     setReps(0); setHoldElapsedSec(0); setStage('NONE')
-    window.location.href = `/trainer?name=${encodeURIComponent(next.name)}&reps=${encodeURIComponent(next.repetitions||'')}&gif=${encodeURIComponent(next.gif_url||'')}&idx=${i}`
+    window.location.href = `/trainer?name=${encodeURIComponent(next.name)}&reps=${encodeURIComponent(getPlanRepetitions(next))}&gif=${encodeURIComponent(getPlanGif(next))}&idx=${i}`
   }
 
   function parseTarget(text: string): number | null {
@@ -477,13 +521,15 @@ function Trainer() {
     setIsResting(true); setRestTimer(30)
     speak(`Rest for 30 seconds. Next: ${next.name}`)
     setTimeout(() => {
-      window.location.href = `/trainer?name=${encodeURIComponent(next.name)}&reps=${encodeURIComponent(next.repetitions||'')}&gif=${encodeURIComponent(next.gif_url||'')}&idx=${nextIdx}`
+      window.location.href = `/trainer?name=${encodeURIComponent(next.name)}&reps=${encodeURIComponent(getPlanRepetitions(next))}&gif=${encodeURIComponent(getPlanGif(next))}&idx=${nextIdx}`
     }, 31000)
   }
 
+  const resolvedTargetInput = currentPlanItem ? getPlanRepetitions(currentPlanItem) : targetReps
+
   useEffect(() => {
-    const targetByReps     = parseTarget(targetReps)
-    const targetByDuration = parseDurationSeconds(targetReps)
+    const targetByReps     = parseTarget(resolvedTargetInput)
+    const targetByDuration = parseDurationSeconds(resolvedTargetInput)
     if (isHoldExercise(exerciseName) && targetByDuration) {
       setTargetTotal(null); setTargetDurationSec(targetByDuration)
     } else {
@@ -499,10 +545,10 @@ function Trainer() {
       setPlan(p)
       if (!params.get('name') && p.length > 0) {
         const first = p[0]
-        window.location.replace(`/trainer?name=${encodeURIComponent(first.name)}&reps=${encodeURIComponent(first.repetitions||'')}&gif=${encodeURIComponent(first.gif_url||'')}&idx=0`)
+        window.location.replace(`/trainer?name=${encodeURIComponent(first.name)}&reps=${encodeURIComponent(getPlanRepetitions(first))}&gif=${encodeURIComponent(getPlanGif(first))}&idx=0`)
       }
     } catch { setPlan([]) }
-  }, [exerciseName, targetReps, exerciseConfig])
+  }, [exerciseName, resolvedTargetInput, exerciseConfig])
 
   useEffect(() => {
     if (advancingRef.current) return
@@ -1024,6 +1070,26 @@ function Trainer() {
   // ──────────────────────────────────────────────────
   const formColor = formScore >= 80 ? '#10b981' : formScore >= 60 ? '#f59e0b' : '#ef4444'
   const cfg = exerciseConfig
+  const workoutTargetText = currentPlanItem
+    ? (() => {
+        const sets = parseSetCount(currentPlanItem.sets)
+        const repsPerSet = parseRepCount(currentPlanItem.reps)
+        if (sets && repsPerSet) return `${sets} x ${repsPerSet}`
+        return getPlanRepetitions(currentPlanItem) || targetReps || '—'
+      })()
+    : (targetReps || '—')
+  const totalPlannedReps = currentPlanItem
+    ? (() => {
+        const sets = parseSetCount(currentPlanItem.sets)
+        const repsPerSet = parseRepCount(currentPlanItem.reps)
+        if (sets && repsPerSet) return sets * repsPerSet
+        return parseTarget(getPlanRepetitions(currentPlanItem))
+      })()
+    : parseTarget(targetReps)
+  const plannedCalBurns = Number(currentPlanItem?.calories_burned)
+  const displayCalBurns = Number.isFinite(plannedCalBurns) && plannedCalBurns > 0
+    ? plannedCalBurns
+    : caloriesBurned
 
   // ──────────────────────────────────────────────────
   // RENDER
@@ -1340,7 +1406,7 @@ function Trainer() {
 
           <div className="gif-info">
             <h4>{exerciseName}</h4>
-            <p>Target: <strong>{targetReps || 'N/A'}</strong></p>
+            <p>Target: <strong>{workoutTargetText || 'N/A'}</strong></p>
             {Object.keys(referenceAngles).length > 0 && (
               <div className="reference-angles">
                 {Object.entries(referenceAngles).map(([k,v]) => (
@@ -1431,7 +1497,7 @@ function Trainer() {
             {plan.map((x,i) => (
               <div key={`${x.name}-${i}`} className={`plan-item ${i===idx?'active':''}`} onClick={() => goToIndex(i, plan)}>
                 <span>{x.name}</span>
-                <span className="secondary">{x.repetitions || 'N/A'}</span>
+                <span className="secondary">{getPlanRepetitions(x) || 'N/A'}</span>
               </div>
             ))}
           </div>
@@ -1497,12 +1563,16 @@ function Trainer() {
               <span className="metric-value">{formatTime(sessionTime)}</span>
             </div>
             <div className="metric-item">
-              <span className="metric-label">Cal</span>
-              <span className="metric-value">{caloriesBurned}</span>
+              <span className="metric-label">Cal Burns</span>
+              <span className="metric-value">{displayCalBurns}</span>
             </div>
             <div className="metric-item">
               <span className="metric-label">Target</span>
-              <span className="metric-value">{cfg?.ii ? `${targetDurationSec}s` : (targetReps || '—')}</span>
+              <span className="metric-value">{cfg?.ii ? `${targetDurationSec}s` : workoutTargetText}</span>
+            </div>
+            <div className="metric-item">
+              <span className="metric-label">Total Reps</span>
+              <span className="metric-value">{totalPlannedReps ?? '—'}</span>
             </div>
           </div>
 

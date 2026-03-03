@@ -212,16 +212,16 @@ function Layout({ children }: Props) {
 
         .nav-links {
           display: flex;
-          gap: 8px;
+          gap: 6px;
           align-items: center;
         }
 
         .nav-link {
           text-decoration: none;
-          font-size: 0.85rem;
+          font-size: 0.98rem;
           font-weight: 700;
           color: #ffffff !important;
-          padding: 10px 18px;
+          padding: 10px 16px;
           border-radius: 12px;
           transition: 0.2s;
         }
@@ -238,7 +238,7 @@ function Layout({ children }: Props) {
         .nav-actions {
           display: flex;
           align-items: center;
-          gap: 12px;
+          gap: 6px;
           position: relative;
         }
 
@@ -247,7 +247,7 @@ function Layout({ children }: Props) {
           border: none;
           color: #ffffff;
           font-size: 1.3rem;
-          padding: 8px 12px;
+          padding: 8px 10px;
           border-radius: 12px;
           cursor: pointer;
           position: relative;
@@ -327,13 +327,14 @@ function Layout({ children }: Props) {
         .nav-panel-item.rem-water { border-color: rgba(59, 130, 246, 0.45); background: rgba(59, 130, 246, 0.1); }
 
         .avatar-trigger {
-          width: 45px;
-          height: 45px;
+          width: 42px;
+          height: 42px;
           border-radius: 15px;
           display: flex;
           align-items: center;
           justify-content: center;
           font-weight: 800;
+          font-size: 1rem;
           cursor: pointer;
           border: 3px solid rgba(16, 185, 129, 0.3);
         }
@@ -455,7 +456,7 @@ function Layout({ children }: Props) {
             title="Reminders"
             aria-label="Reminders"
           >
-            📋
+         ⏰
             <span className="badge-count">{reminderItems.length}</span>
           </button>
 
@@ -475,7 +476,7 @@ function Layout({ children }: Props) {
 
           {showReminders && (
             <div className="nav-panel" role="dialog" aria-label="Daily Reminders">
-              <h4>📋 Daily Reminders</h4>
+              <h4>⏰ Daily Reminders</h4>
               <div className="nav-panel-count">{reminderItems.length}</div>
               <div className="nav-panel-list">
                 {reminderItems.length > 0 ? reminderItems.map((item, idx) => {
@@ -538,4 +539,3 @@ function Layout({ children }: Props) {
 }
 
 export default Layout
-

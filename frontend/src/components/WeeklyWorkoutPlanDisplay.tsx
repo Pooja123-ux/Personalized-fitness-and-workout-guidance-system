@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import api from '../api'
 
 interface WeeklyWorkoutPlan {
@@ -21,6 +21,31 @@ interface ExerciseWithSets {
   sets: number
   reps: string
   rest_time: string
+  calories_burned: number
+}
+
+interface BackendWorkoutItem {
+  name: string
+  body_part: string
+  equipment: string
+  reps: string
+  sets: string
+  calories_burned: number
+  instructions: string[]
+}
+
+interface BackendDailyWorkoutPlan {
+  day: string
+  focus_area: string
+  warmup: BackendWorkoutItem[]
+  main_exercises: BackendWorkoutItem[]
+  cooldown: BackendWorkoutItem[]
+  total_duration: number
+  estimated_calories: number
+}
+
+interface BackendWeeklyWorkoutPlan {
+  workouts: Record<string, BackendDailyWorkoutPlan>
 }
 
 function WeeklyWorkoutPlanDisplay() {
@@ -30,7 +55,9 @@ function WeeklyWorkoutPlanDisplay() {
   const [error, setError] = useState<string | null>(null)
   const [workoutCompletedToday, setWorkoutCompletedToday] = useState(false)
   const [workoutSaving, setWorkoutSaving] = useState(false)
+  const [planHint, setPlanHint] = useState<string>('')
 
+  const dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
   const toLocalIsoDate = (d: Date): string => {
     const y = d.getFullYear()
     const m = String(d.getMonth() + 1).padStart(2, '0')
@@ -40,8 +67,87 @@ function WeeklyWorkoutPlanDisplay() {
   const todayIso = toLocalIsoDate(new Date())
   const todayDayName = new Date(`${todayIso}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long' })
 
+  const getAreaAccent = (targetArea: string) => {
+    const map: { [key: string]: { icon: string; bg: string; border: string; text: string } } = {
+      'Upper Body': { icon: 'UP', bg: 'rgba(59, 130, 246, 0.15)', border: 'rgba(59, 130, 246, 0.3)', text: '#60a5fa' },
+      'Lower Body': { icon: 'LOW', bg: 'rgba(6, 182, 212, 0.15)', border: 'rgba(6, 182, 212, 0.3)', text: '#22d3ee' },
+      Core: { icon: 'CORE', bg: 'rgba(245, 158, 11, 0.15)', border: 'rgba(245, 158, 11, 0.3)', text: '#fbbf24' },
+      'Full Body': { icon: 'FULL', bg: 'rgba(16, 185, 129, 0.15)', border: 'rgba(16, 185, 129, 0.3)', text: '#10b981' },
+      Cardio: { icon: 'HIIT', bg: 'rgba(239, 68, 68, 0.15)', border: 'rgba(239, 68, 68, 0.3)', text: '#f87171' },
+      Flexibility: { icon: 'MOB', bg: 'rgba(139, 92, 246, 0.15)', border: 'rgba(139, 92, 246, 0.3)', text: '#a78bfa' },
+      'Core & Flexibility': { icon: 'MOB', bg: 'rgba(139, 92, 246, 0.15)', border: 'rgba(139, 92, 246, 0.3)', text: '#a78bfa' },
+      'Rest Day': { icon: 'REST', bg: 'rgba(148, 163, 184, 0.15)', border: 'rgba(148, 163, 184, 0.3)', text: '#94a3b8' },
+      Rest: { icon: 'REST', bg: 'rgba(148, 163, 184, 0.15)', border: 'rgba(148, 163, 184, 0.3)', text: '#94a3b8' }
+    }
+    return map[targetArea] || map['Full Body']
+  }
+
+  const mapBackendPlan = (plan: BackendWeeklyWorkoutPlan): WeeklyWorkoutPlan[] => {
+    const workouts = plan?.workouts || {}
+    return dayOrder.map((day) => {
+      const d = workouts[day]
+      if (!d) {
+        return { day, target_area: 'Rest Day', exercises: [], total_duration: '0m', calories_burned: 0 }
+      }
+
+      const merged = [...(d.warmup || []), ...(d.main_exercises || []), ...(d.cooldown || [])]
+      const exercises: ExerciseWithSets[] = merged.map((ex, idx) => ({
+        id: `${day}-${idx}-${String(ex.name || '').toLowerCase().replace(/\s+/g, '-')}`,
+        name: ex.name || 'Exercise',
+        bodyPart: ex.body_part || 'Full Body',
+        equipment: ex.equipment || 'Body Weight',
+        gifUrl: '',
+        target: ex.body_part || 'General',
+        secondaryMuscles: [],
+        instructions: Array.isArray(ex.instructions) ? ex.instructions : [],
+        sets: Number(ex.sets || 3),
+        reps: String(ex.reps || '10-12'),
+        rest_time: '60s',
+        calories_burned: Number(ex.calories_burned || 0)
+      }))
+
+      return {
+        day,
+        target_area: d.focus_area || 'Workout',
+        exercises,
+        total_duration: `${Number(d.total_duration || 0)}m`,
+        calories_burned: Number(d.estimated_calories || 0)
+      }
+    })
+  }
+
+  const fetchWorkoutPlan = async () => {
+    try {
+      setLoading(true)
+      let response: any
+      try {
+        response = await api.get('/workout-plan/weekly-workout-plan?force_refresh=true')
+      } catch {
+        response = await api.get('/workout-plan/public/weekly-workout-plan?force_refresh=true')
+      }
+
+      const backendPlan = response?.data?.weekly_workout_plan as BackendWeeklyWorkoutPlan | undefined
+      if (!backendPlan?.workouts) throw new Error('Invalid workout plan response')
+
+      const mapped = mapBackendPlan(backendPlan)
+      setWeeklyPlan(mapped)
+      setSelectedDay((prev) => {
+        if (mapped.some((p) => p.day === prev)) return prev
+        const todayPlan = mapped.find((p) => p.day === todayDayName)
+        return todayPlan?.day || mapped[0]?.day || 'Monday'
+      })
+      setPlanHint(String(response?.data?.message || 'Personalized from profile, report, and progress'))
+      setError(null)
+    } catch (err) {
+      console.error('Error fetching workout recommendations:', err)
+      setError('Could not load personalized workout recommendations right now.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
-    fetchExercisesData()
+    fetchWorkoutPlan()
   }, [])
 
   useEffect(() => {
@@ -55,159 +161,9 @@ function WeeklyWorkoutPlanDisplay() {
     }
     fetchTodayWorkoutAdherence()
   }, [todayIso])
-  const fetchExercisesData = async () => {
-    try {
-      setLoading(true)
-      const response = await fetch('/exercises.json')
-      const data = await response.json()
-      const generatedPlan = generateWeeklyWorkoutPlanFromDataset(data)
-      setWeeklyPlan(generatedPlan)
-      setSelectedDay(generatedPlan[0]?.day || 'Monday')
-      setError(null)
-    } catch (err) {
-      console.error('Error fetching exercises data:', err)
-      setError('Could not load workout recommendations right now.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const isHomeFriendlyEquipment = (equipment: string) => {
-    const eq = (equipment || '').toLowerCase().trim()
-    if (!eq) return true
-
-    const homeAllowed = [
-      'body weight', 'bodyweight', 'none', 'no equipment',
-      'dumbbell', 'kettlebell', 'resistance band', 'band',
-      'medicine ball', 'yoga mat', 'mat', 'chair'
-    ]
-    const gymOnly = [
-      'cable', 'machine', 'barbell', 'smith', 'leverage',
-      'ez bar', 'olympic', 'hex bar', 'sled', 'rowing machine'
-    ]
-
-    if (gymOnly.some((token) => eq.includes(token))) return false
-    return homeAllowed.some((token) => eq.includes(token))
-  }
-
-  const generateWeeklyWorkoutPlanFromDataset = (dataset: any[]): WeeklyWorkoutPlan[] => {
-    const homeDataset = dataset.filter((exercise) => isHomeFriendlyEquipment(String(exercise.equipment || '')))
-    const sourceDataset = homeDataset.length > 0 ? homeDataset : dataset
-
-    const bodyPartToTargetArea: { [key: string]: string } = {
-      waist: 'Core',
-      'upper legs': 'Lower Body',
-      'lower legs': 'Lower Body',
-      back: 'Upper Body',
-      chest: 'Upper Body',
-      'upper arms': 'Upper Body',
-      'lower arms': 'Upper Body',
-      cardio: 'Cardio'
-    }
-
-    const getRepsAndSets = (targetArea: string) => {
-      const repsSets: { [key: string]: { reps: string; sets: number; rest: string } } = {
-        'Upper Body': { reps: '10-12', sets: 4, rest: '60s' },
-        'Lower Body': { reps: '12-15', sets: 4, rest: '90s' },
-        Core: { reps: '15-20', sets: 3, rest: '45s' },
-        'Full Body': { reps: '8-12', sets: 4, rest: '90s' },
-        Cardio: { reps: '30-45 sec', sets: 4, rest: '30s' },
-        Flexibility: { reps: '30 sec hold', sets: 3, rest: '15s' }
-      }
-      return repsSets[targetArea] || { reps: '10-12', sets: 3, rest: '60s' }
-    }
-
-    const exercisesByBodyPart = sourceDataset.reduce((acc, exercise) => {
-      const bodyPart = exercise.bodyPart
-      if (!acc[bodyPart]) acc[bodyPart] = []
-      acc[bodyPart].push(exercise)
-      return acc
-    }, {} as { [key: string]: any[] })
-
-    const weeklySchedule = [
-      { day: 'Monday', target_area: 'Upper Body' },
-      { day: 'Tuesday', target_area: 'Lower Body' },
-      { day: 'Wednesday', target_area: 'Core' },
-      { day: 'Thursday', target_area: 'Cardio' },
-      { day: 'Friday', target_area: 'Full Body' },
-      { day: 'Saturday', target_area: 'Flexibility' },
-      { day: 'Sunday', target_area: 'Rest Day' }
-    ]
-
-    return weeklySchedule.map((schedule) => {
-      const targetArea = schedule.target_area
-      let exercises: ExerciseWithSets[] = []
-
-      if (targetArea === 'Rest Day') {
-        exercises = []
-      } else if (targetArea === 'Full Body') {
-        Object.keys(bodyPartToTargetArea).forEach((bodyPart) => {
-          if (exercisesByBodyPart[bodyPart]) exercises = exercises.concat(exercisesByBodyPart[bodyPart].slice(0, 1))
-        })
-        exercises = exercises.filter((exercise, index, self) => index === self.findIndex((e) => e.id === exercise.id)).slice(0, 6)
-      } else if (targetArea === 'Flexibility') {
-        const flexibilityKeywords = ['stretch', 'yoga', 'mobility', 'flex']
-        exercises = sourceDataset
-          .filter((exercise) =>
-            flexibilityKeywords.some(
-              (keyword) => exercise.name.toLowerCase().includes(keyword) || exercise.target.toLowerCase().includes(keyword)
-            )
-          )
-          .slice(0, 6)
-      } else {
-        const relevantBodyParts = Object.keys(bodyPartToTargetArea).filter((bodyPart) => bodyPartToTargetArea[bodyPart] === targetArea)
-        relevantBodyParts.forEach((bodyPart) => {
-          if (exercisesByBodyPart[bodyPart]) exercises = exercises.concat(exercisesByBodyPart[bodyPart].slice(0, 3))
-        })
-        exercises = exercises.filter((exercise, index, self) => index === self.findIndex((e) => e.id === exercise.id)).slice(0, 6)
-      }
-
-      const repsSets = getRepsAndSets(targetArea)
-      exercises = exercises.map((exercise) => ({ ...exercise, sets: repsSets.sets, reps: repsSets.reps, rest_time: repsSets.rest }))
-
-      const totalDuration = calculateRealisticDuration(targetArea)
-      return {
-        day: schedule.day,
-        target_area: targetArea,
-        exercises,
-        total_duration: totalDuration,
-        calories_burned: targetArea === 'Rest Day' ? 0 : Math.floor(parseInt(totalDuration, 10) * 8)
-      }
-    })
-  }
-
-  const calculateRealisticDuration = (targetArea: string): string => {
-    const baseDurations: { [key: string]: number } = {
-      'Upper Body': 35,
-      'Lower Body': 40,
-      Core: 35,
-      'Full Body': 35,
-      Cardio: 30,
-      Flexibility: 30,
-      'Rest Day': 0
-    }
-    const baseDuration = baseDurations[targetArea] || 30
-    const variation = Math.floor(Math.random() * 10) - 5
-    const totalMinutes = targetArea === 'Rest Day' ? 0 : Math.max(20, Math.min(45, baseDuration + variation))
-    return `${totalMinutes}m`
-  }
-
-  const getAreaAccent = (targetArea: string) => {
-    const map: { [key: string]: { icon: string; bg: string; border: string; text: string } } = {
-      'Upper Body': { icon: 'UP', bg: 'rgba(59, 130, 246, 0.15)', border: 'rgba(59, 130, 246, 0.3)', text: '#60a5fa' },
-      'Lower Body': { icon: 'LOW', bg: 'rgba(6, 182, 212, 0.15)', border: 'rgba(6, 182, 212, 0.3)', text: '#22d3ee' },
-      Core: { icon: 'CORE', bg: 'rgba(245, 158, 11, 0.15)', border: 'rgba(245, 158, 11, 0.3)', text: '#fbbf24' },
-      'Full Body': { icon: 'FULL', bg: 'rgba(16, 185, 129, 0.15)', border: 'rgba(16, 185, 129, 0.3)', text: '#10b981' },
-      Cardio: { icon: 'HIIT', bg: 'rgba(239, 68, 68, 0.15)', border: 'rgba(239, 68, 68, 0.3)', text: '#f87171' },
-      Flexibility: { icon: 'MOB', bg: 'rgba(139, 92, 246, 0.15)', border: 'rgba(139, 92, 246, 0.3)', text: '#a78bfa' },
-      'Rest Day': { icon: 'REST', bg: 'rgba(148, 163, 184, 0.15)', border: 'rgba(148, 163, 184, 0.3)', text: '#94a3b8' }
-    }
-    return map[targetArea] || map['Full Body']
-  }
 
   const selectedDayPlan = weeklyPlan.find((plan) => plan.day === selectedDay) || weeklyPlan[0] || null
 
-  
   const markTodayWorkout = async () => {
     if (selectedDay !== todayDayName) return
     if (!selectedDayPlan) return
@@ -228,6 +184,7 @@ function WeeklyWorkoutPlanDisplay() {
       setWorkoutSaving(false)
     }
   }
+
   if (loading) return <div style={{ padding: '28px', textAlign: 'center', color: '#94a3b8' }}>Loading workout recommendations...</div>
 
   if (error) {
@@ -235,7 +192,7 @@ function WeeklyWorkoutPlanDisplay() {
       <div style={{ padding: '28px', textAlign: 'center' }}>
         <div style={{ marginBottom: 12, color: '#ef4444' }}>{error}</div>
         <button
-          onClick={fetchExercisesData}
+          onClick={fetchWorkoutPlan}
           style={{ border: 'none', borderRadius: 10, background: 'linear-gradient(135deg, #10b981, #059669)', color: 'white', padding: '10px 14px', fontWeight: 700 }}
         >
           Retry
@@ -331,7 +288,8 @@ function WeeklyWorkoutPlanDisplay() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <div>
                 <div style={{ fontSize: '0.76rem', color: '#94a3b8', fontWeight: 700, letterSpacing: '0.04em' }}>SELECTED SESSION</div>
-                <h3 style={{ margin: '4px 0 0', fontSize: '1.15rem', color: '#ffffff' }}>{selectedDayPlan.day} • {selectedDayPlan.target_area}</h3>
+                <h3 style={{ margin: '4px 0 0', fontSize: '1.15rem', color: '#ffffff' }}>{selectedDayPlan.day} | {selectedDayPlan.target_area}</h3>
+                {planHint && <div style={{ marginTop: 5, fontSize: '0.72rem', color: '#93c5fd', fontWeight: 700 }}>{planHint}</div>}
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <div style={{ borderRadius: 10, background: 'rgba(6, 182, 212, 0.15)', color: '#22d3ee', border: '1px solid rgba(6, 182, 212, 0.3)', padding: '6px 10px', fontWeight: 700, fontSize: '0.8rem' }}>
@@ -370,7 +328,7 @@ function WeeklyWorkoutPlanDisplay() {
             </div>
           </div>
 
-          {selectedDayPlan.target_area === 'Rest Day' ? (
+          {selectedDayPlan.target_area === 'Rest Day' || selectedDayPlan.target_area === 'Rest' ? (
             <div style={{ border: '1px solid rgba(148, 163, 184, 0.3)', borderRadius: 16, background: 'rgba(148, 163, 184, 0.1)', padding: 20, textAlign: 'center', color: '#e2e8f0' }}>
               <h4 style={{ margin: 0 }}>Rest and Recovery</h4>
               <p style={{ margin: '8px 0 0', fontSize: '0.92rem' }}>Use this day for walking, stretching, hydration, and sleep quality.</p>
@@ -431,11 +389,16 @@ function WeeklyWorkoutPlanDisplay() {
                             name: ex.name,
                             target: ex.target,
                             gifUrl: ex.gifUrl,
-                            instructions: ex.instructions
+                            gif_url: ex.gifUrl,
+                            instructions: ex.instructions,
+                            sets: ex.sets,
+                            reps: ex.reps,
+                            repetitions: `${ex.sets}x${ex.reps}`,
+                            calories_burned: ex.calories_burned
                           }))
                           sessionStorage.setItem('workoutPlan', JSON.stringify(workoutPlan))
-                          window.location.href = `/trainer?name=${encodeURIComponent(exercise.name)}&target=${encodeURIComponent(
-                            exercise.target
+                          window.location.href = `/trainer?name=${encodeURIComponent(exercise.name)}&reps=${encodeURIComponent(
+                            `${exercise.sets}x${exercise.reps}`
                           )}&gif=${encodeURIComponent(exercise.gifUrl)}&idx=${index}`
                         }}
                       >

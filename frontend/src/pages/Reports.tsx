@@ -258,6 +258,51 @@ function Reports() {
     if (level === 'good') return { icon: '\u2705', prefix: 'Improved' };
     return { icon: '\u2139\uFE0F', prefix: 'Stable' };
   };
+  const groupedDiseaseAlerts = useMemo(() => {
+    const groups = new Map<string, {
+      level: DiseaseTrendAlert['level'];
+      lab: string;
+      direction: TrendDirection;
+      previousValue: string;
+      currentValue: string;
+      changePercent: number | null;
+      conditions: string[];
+    }>();
+    for (const alert of reportComparison.diseaseTrendAlerts) {
+      const key = [
+        normalizeText(alert.lab),
+        alert.direction,
+        String(alert.previousValue || ''),
+        String(alert.currentValue || ''),
+        alert.changePercent === null ? 'na' : String(alert.changePercent),
+        alert.level
+      ].join('|');
+      const existing = groups.get(key);
+      if (!existing) {
+        groups.set(key, {
+          level: alert.level,
+          lab: alert.lab,
+          direction: alert.direction,
+          previousValue: alert.previousValue,
+          currentValue: alert.currentValue,
+          changePercent: alert.changePercent,
+          conditions: [alert.condition]
+        });
+        continue;
+      }
+      if (!existing.conditions.includes(alert.condition)) {
+        existing.conditions.push(alert.condition);
+      }
+    }
+    return Array.from(groups.values())
+      .sort((a, b) => {
+        const sev = { warning: 0, neutral: 1, good: 2 };
+        return (sev[a.level] - sev[b.level]) || (b.conditions.length - a.conditions.length);
+      });
+  }, [reportComparison.diseaseTrendAlerts]);
+  const warningCount = groupedDiseaseAlerts.filter((a) => a.level === 'warning').length;
+  const goodCount = groupedDiseaseAlerts.filter((a) => a.level === 'good').length;
+  const neutralCount = groupedDiseaseAlerts.filter((a) => a.level === 'neutral').length;
 
   return (
     <div className="reports-container">
@@ -420,6 +465,27 @@ function Reports() {
           font-size: 0.9rem;
           font-weight: 600;
         }
+
+        .comparison-stats {
+          margin-top: 12px;
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+
+        .comparison-stat {
+          border-radius: 999px;
+          padding: 5px 10px;
+          font-size: 0.74rem;
+          font-weight: 800;
+          border: 1px solid #475569;
+          background: rgba(15, 23, 42, 0.5);
+          color: #e2e8f0;
+        }
+
+        .comparison-stat.warning { border-color: #ef4444; color: #fecaca; }
+        .comparison-stat.good { border-color: #10b981; color: #a7f3d0; }
+        .comparison-stat.neutral { border-color: #3b82f6; color: #bfdbfe; }
 
         .comparison-list {
           margin-top: 12px;
@@ -720,10 +786,15 @@ function Reports() {
           <h3 className="comparison-title">Report Comparison Summary</h3>
           <p className="comparison-note">
             {reportComparison.duplicateGroups.length > 0
-              ? `${reportComparison.duplicateReportsCount} report uploads match an earlier report.`
+              ? `${reportComparison.duplicateReportsCount} uploads appear duplicated across previous reports.`
               : 'No duplicate medical report uploads were found.'}
             {reportComparison.latestIsDuplicate ? ' The latest upload appears to be already uploaded before.' : ''}
           </p>
+          <div className="comparison-stats">
+            <span className="comparison-stat warning">{warningCount} alert{warningCount === 1 ? '' : 's'}</span>
+            <span className="comparison-stat neutral">{neutralCount} stable</span>
+            <span className="comparison-stat good">{goodCount} improved</span>
+          </div>
           {reportComparison.duplicateGroups.length > 0 && (
             <div className="comparison-list">
               {reportComparison.duplicateGroups.slice(0, 3).map((group, idx) => (
@@ -734,15 +805,22 @@ function Reports() {
               ))}
             </div>
           )}
-          {reportComparison.diseaseTrendAlerts.length > 0 && (
+          {groupedDiseaseAlerts.length > 0 && (
             <div className="comparison-list">
-              {reportComparison.diseaseTrendAlerts.slice(0, 8).map((alert, idx) => {
+              {groupedDiseaseAlerts.slice(0, 8).map((alert, idx) => {
                 const meta = comparisonAlertMeta(alert.level);
                 return (
-                  <div key={`${alert.condition}-${alert.lab}-${idx}`} className={`comparison-item ${alert.level}`}>
+                  <div key={`${alert.lab}-${alert.direction}-${idx}`} className={`comparison-item ${alert.level}`}>
                     <span className="comparison-icon" aria-hidden="true">{meta.icon}</span>
                     <span className="comparison-text">
-                      <strong>{meta.prefix}:</strong> <span className="comparison-disease">{alert.condition}</span> - {alert.lab} {alert.direction === 'up' ? 'went up' : alert.direction === 'down' ? 'fell down' : 'did not change'} (<span className="comparison-value">{alert.previousValue}</span> {'->'} <span className="comparison-value">{alert.currentValue}</span>{alert.changePercent !== null ? <><span>{', '}</span><span className="comparison-value">{`${alert.changePercent > 0 ? '+' : ''}${alert.changePercent}%`}</span></> : ''})
+                      <strong>{meta.prefix}:</strong>{' '}
+                      <span className="comparison-disease">
+                        {alert.conditions.length > 1 ? `${alert.conditions.length} conditions` : alert.conditions[0]}
+                      </span>
+                      {' '} - {alert.lab} {alert.direction === 'up' ? 'went up' : alert.direction === 'down' ? 'fell down' : 'did not change'} (
+                      <span className="comparison-value">{alert.previousValue}</span> {'->'} <span className="comparison-value">{alert.currentValue}</span>
+                      {alert.changePercent !== null ? <><span>{', '}</span><span className="comparison-value">{`${alert.changePercent > 0 ? '+' : ''}${alert.changePercent}%`}</span></> : ''})
+                      {alert.conditions.length > 1 ? <><span>{' '}</span><span style={{ opacity: 0.9 }}>Affected: {alert.conditions.join(', ')}</span></> : null}
                     </span>
                   </div>
                 );

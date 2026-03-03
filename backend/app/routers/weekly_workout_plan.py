@@ -104,11 +104,60 @@ def get_weekly_workout_variety(target_area: str, level: str, weight_kg: float) -
     
     return weekly_focus
 
+def _normalize_text(value: str) -> str:
+    return str(value or "").strip().lower()
+
+def _dedupe_workouts(items: List[WorkoutItem]) -> List[WorkoutItem]:
+    seen = set()
+    out: List[WorkoutItem] = []
+    for item in items:
+        key = _normalize_text(item.name)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
+
+def _rotate_by(items: List[WorkoutItem], day_index: int) -> List[WorkoutItem]:
+    if not items:
+        return items
+    shift = day_index % len(items)
+    return items[shift:] + items[:shift]
+
+def _fallback_main_pool(level: str) -> List[WorkoutItem]:
+    return [
+        WorkoutItem(name="Push-ups", body_part="Upper Body", equipment="Body Weight", difficulty=level, reps="3x10", sets="3", duration_minutes=8, calories_burned=60, instructions=["Start in plank position", "Lower body to ground", "Push back up"]),
+        WorkoutItem(name="Squats", body_part="Lower Body", equipment="Body Weight", difficulty=level, reps="3x15", sets="3", duration_minutes=8, calories_burned=70, instructions=["Stand with feet shoulder-width", "Lower hips back and down", "Return to starting position"]),
+        WorkoutItem(name="Plank", body_part="Core", equipment="Body Weight", difficulty=level, reps="3x30s", sets="3", duration_minutes=6, calories_burned=40, instructions=["Hold forearm plank", "Keep body straight", "Engage core muscles"]),
+        WorkoutItem(name="Glute Bridge", body_part="Lower Body", equipment="Body Weight", difficulty=level, reps="3x15", sets="3", duration_minutes=6, calories_burned=45, instructions=["Lie on your back", "Drive hips up", "Pause and lower with control"]),
+        WorkoutItem(name="Mountain Climbers", body_part="Cardio", equipment="Body Weight", difficulty=level, reps="3x30s", sets="3", duration_minutes=6, calories_burned=55, instructions=["Start in plank", "Drive knees alternately", "Keep core tight"]),
+        WorkoutItem(name="Lunges", body_part="Lower Body", equipment="Body Weight", difficulty=level, reps="3x12 each side", sets="3", duration_minutes=7, calories_burned=58, instructions=["Step forward", "Lower both knees", "Push through front heel"]),
+        WorkoutItem(name="Pike Push-up", body_part="Upper Body", equipment="Body Weight", difficulty=level, reps="3x8", sets="3", duration_minutes=6, calories_burned=42, instructions=["Form inverted V", "Lower head toward floor", "Press back up"]),
+        WorkoutItem(name="Bicycle Crunch", body_part="Core", equipment="Body Weight", difficulty=level, reps="3x20", sets="3", duration_minutes=5, calories_burned=35, instructions=["Lie on back", "Alternate elbow to opposite knee", "Control each rep"]),
+    ]
+
+def _fallback_warmup_pool(level: str) -> List[WorkoutItem]:
+    return [
+        WorkoutItem(name="Jumping Jacks", body_part="Full Body", equipment="Body Weight", difficulty=level, reps="3x30", sets="3", duration_minutes=5, calories_burned=50, instructions=["Start with feet together", "Jump while spreading legs", "Raise arms overhead"]),
+        WorkoutItem(name="Arm Circles", body_part="Upper Body", equipment="Body Weight", difficulty=level, reps="2x20", sets="2", duration_minutes=3, calories_burned=20, instructions=["Extend arms to sides", "Make small circles", "Reverse direction"]),
+        WorkoutItem(name="High Knees", body_part="Cardio", equipment="Body Weight", difficulty=level, reps="3x30s", sets="3", duration_minutes=4, calories_burned=38, instructions=["Run in place", "Drive knees high", "Keep chest up"]),
+        WorkoutItem(name="Hip Openers", body_part="Lower Body", equipment="Body Weight", difficulty=level, reps="2x12", sets="2", duration_minutes=4, calories_burned=18, instructions=["Stand tall", "Open hip outward", "Alternate sides"]),
+    ]
+
+def _fallback_cooldown_pool(level: str) -> List[WorkoutItem]:
+    return [
+        WorkoutItem(name="Stretching", body_part="Full Body", equipment="Body Weight", difficulty=level, reps="5x30s", sets="5", duration_minutes=5, calories_burned=20, instructions=["Stretch major muscle groups", "Hold each stretch 30 seconds", "Focus on breathing"]),
+        WorkoutItem(name="Deep Breathing", body_part="Full Body", equipment="Body Weight", difficulty=level, reps="10x", sets="1", duration_minutes=3, calories_burned=10, instructions=["Sit comfortably", "Inhale deeply", "Exhale slowly"]),
+        WorkoutItem(name="Child Pose Hold", body_part="Flexibility", equipment="Yoga Mat", difficulty=level, reps="2x45s", sets="2", duration_minutes=3, calories_burned=8, instructions=["Kneel on mat", "Sit hips back", "Reach arms forward"]),
+        WorkoutItem(name="Hamstring Stretch", body_part="Lower Body", equipment="Body Weight", difficulty=level, reps="2x30s each side", sets="2", duration_minutes=3, calories_burned=8, instructions=["Hinge forward gently", "Keep back flat", "Breathe steadily"]),
+    ]
+
 def generate_exercises_for_focus(
     focus_area: str,
     level: str,
     target_area: str,
     weight_kg: float,
+    day_index: int = 0,
     profile_context: Optional[Dict] = None,
 ) -> Dict:
     """Generate exercises based on focus area and user profile"""
@@ -168,26 +217,36 @@ def generate_exercises_for_focus(
                 # Add to main exercises if it doesn't fit specific categories
                 main_exercises.append(exercise_item)
     
-    # Ensure we have enough exercises
+    warmup_exercises = _dedupe_workouts(warmup_exercises)
+    main_exercises = _dedupe_workouts(main_exercises)
+    cooldown_exercises = _dedupe_workouts(cooldown_exercises)
+
+    # Enrich with fallback pools instead of replacing everything, then rotate by day.
+    warmup_pool = _fallback_warmup_pool(level)
+    cooldown_pool = _fallback_cooldown_pool(level)
+    main_pool = _fallback_main_pool(level)
+
+    focus = focus_area.lower()
+    if "upper" in focus:
+        main_pool = [m for m in main_pool if _normalize_text(m.body_part) in {"upper body", "core", "full body"}]
+    elif "lower" in focus:
+        main_pool = [m for m in main_pool if _normalize_text(m.body_part) in {"lower body", "core", "full body"}]
+    elif "cardio" in focus or "hiit" in focus:
+        main_pool = [m for m in main_pool if _normalize_text(m.body_part) in {"cardio", "full body", "core"}]
+    elif "core" in focus:
+        main_pool = [m for m in main_pool if _normalize_text(m.body_part) in {"core", "cardio", "full body"}]
+
     if len(warmup_exercises) < 2:
-        warmup_exercises = [
-            WorkoutItem(name="Jumping Jacks", body_part="Full Body", equipment="Body Weight", difficulty=level, reps="3x30", sets="3", duration_minutes=5, calories_burned=50, instructions=["Start with feet together", "Jump while spreading legs", "Raise arms overhead"]),
-            WorkoutItem(name="Arm Circles", body_part="Upper Body", equipment="Body Weight", difficulty=level, reps="2x20", sets="2", duration_minutes=3, calories_burned=20, instructions=["Extend arms to sides", "Make small circles", "Reverse direction"])
-        ]
-    
-    if len(main_exercises) < 3:
-        main_exercises = [
-            WorkoutItem(name="Push-ups", body_part="Upper Body", equipment="Body Weight", difficulty=level, reps="3x10", sets="3", duration_minutes=8, calories_burned=60, instructions=["Start in plank position", "Lower body to ground", "Push back up"]),
-            WorkoutItem(name="Squats", body_part="Lower Body", equipment="Body Weight", difficulty=level, reps="3x15", sets="3", duration_minutes=8, calories_burned=70, instructions=["Stand with feet shoulder-width", "Lower hips back and down", "Return to starting position"]),
-            WorkoutItem(name="Plank", body_part="Core", equipment="Body Weight", difficulty=level, reps="3x30s", sets="3", duration_minutes=6, calories_burned=40, instructions=["Hold forearm plank", "Keep body straight", "Engage core muscles"])
-        ]
-    
+        warmup_exercises.extend([w for w in warmup_pool if _normalize_text(w.name) not in {_normalize_text(x.name) for x in warmup_exercises}])
+    if len(main_exercises) < 4:
+        main_exercises.extend([m for m in main_pool if _normalize_text(m.name) not in {_normalize_text(x.name) for x in main_exercises}])
     if len(cooldown_exercises) < 2:
-        cooldown_exercises = [
-            WorkoutItem(name="Stretching", body_part="Full Body", equipment="Body Weight", difficulty=level, reps="5x30s", sets="5", duration_minutes=5, calories_burned=20, instructions=["Stretch major muscle groups", "Hold each stretch 30 seconds", "Focus on breathing"]),
-            WorkoutItem(name="Deep Breathing", body_part="Full Body", equipment="Body Weight", difficulty=level, reps="10x", sets="1", duration_minutes=3, calories_burned=10, instructions=["Sit comfortably", "Inhale deeply", "Exhale slowly"])
-        ]
-    
+        cooldown_exercises.extend([c for c in cooldown_pool if _normalize_text(c.name) not in {_normalize_text(x.name) for x in cooldown_exercises}])
+
+    warmup_exercises = _rotate_by(_dedupe_workouts(warmup_exercises), day_index)
+    main_exercises = _rotate_by(_dedupe_workouts(main_exercises), day_index)
+    cooldown_exercises = _rotate_by(_dedupe_workouts(cooldown_exercises), day_index)
+
     return {
         "warmup": warmup_exercises[:2],
         "main": main_exercises[:4],
@@ -259,7 +318,14 @@ def generate_daily_workout(
             estimated_calories=0
         )
     
-    exercises = generate_exercises_for_focus(focus_data["focus"], level, target_area, weight_kg, profile_context=profile_context)
+    exercises = generate_exercises_for_focus(
+        focus_data["focus"],
+        level,
+        target_area,
+        weight_kg,
+        day_index=day_index,
+        profile_context=profile_context
+    )
     
     # Calculate totals
     total_duration = sum(item.duration_minutes for item in exercises["warmup"] + exercises["main"] + exercises["cooldown"])
