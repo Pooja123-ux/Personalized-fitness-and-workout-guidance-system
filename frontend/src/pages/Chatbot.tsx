@@ -38,7 +38,7 @@ function Chatbot() {
     {
       id: crypto.randomUUID(),
       role: 'assistant',
-      text: 'Ask me any fitness or nutrition question. I can answer common guidance and dataset-backed questions on exercises, Indian foods, diet recommendations, health conditions, and yoga.',
+      text: 'Ask me any fitness or nutrition question. I can guide you to reach your fitness goals. ',
       meta: {
         category: 'intro',
         confidence: 0.95

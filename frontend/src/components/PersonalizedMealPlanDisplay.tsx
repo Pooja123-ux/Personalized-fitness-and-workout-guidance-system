@@ -888,6 +888,18 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
     return mealTypes.reduce((sum, mealType) => sum + (dayPlan.meals[mealType]?.length || 0), 0);
   };
 
+  const getAllMealItemIds = (dayPlan: PersonalizedDailyPlan | null): string[] => {
+    if (!dayPlan) return [];
+    const ids: string[] = [];
+    for (const mealType of mealTypes) {
+      const items = (dayPlan.meals?.[mealType] || []) as PersonalizedMeal[];
+      items.forEach((meal, idx) => {
+        ids.push(buildMealItemId(mealType, idx, meal.name));
+      });
+    }
+    return ids;
+  };
+
   const persistAdherence = async (
     nextCompletedIds: string[],
     nextExtraFoods: AdherenceExtraFood[],
@@ -947,6 +959,10 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
     : 0;
   const waterTargetMl = getWaterTargetMl();
   const waterProgressPercent = Math.min(100, Math.round((waterMl / Math.max(1, waterTargetMl)) * 100));
+  const allMealItemIds = getAllMealItemIds(selectedDayPlan);
+  const completedSet = new Set(completedItemIds);
+  const finishedMealsCount = allMealItemIds.reduce((sum, id) => sum + (completedSet.has(id) ? 1 : 0), 0);
+  const allMealsFinished = allMealItemIds.length > 0 && finishedMealsCount === allMealItemIds.length;
   const avoidFoods = dedupe([
     ...(userProfile?.foods_to_avoid || []),
     ...(reportInsights.foodsToAvoid || [])
@@ -1298,6 +1314,23 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
             <h3 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 800, color: '#f1f5f9' }}>
               {effectiveSelectedDay}'s Personalized Meals
             </h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="finish-all-btn"
+                disabled={allMealItemIds.length === 0 || allMealsFinished}
+                onClick={() => {
+                  if (!selectedDayPlan || allMealItemIds.length === 0 || allMealsFinished) return;
+                  const next = Array.from(new Set([...completedItemIds, ...allMealItemIds]));
+                  setCompletedItemIds(next);
+                  persistAdherence(next, extraFoods, waterMl);
+                }}
+              >
+                {allMealsFinished ? 'All meals finished' : 'Mark all as finished'}
+              </button>
+              <div style={{ fontSize: '0.85rem', color: '#cbd5e1', minWidth: '110px' }}>
+                {finishedMealsCount}/{allMealItemIds.length} done
+              </div>
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontSize: '1rem', color: '#cbd5e1', marginBottom: '5px' }}>
                 Total: <span style={{ fontWeight: 800, color: '#fbbf24' }}>{selectedDayPlan?.total_calories || 0}</span> cal
@@ -1305,6 +1338,7 @@ const PersonalizedMealPlanDisplay: React.FC = () => {
               <div style={{ fontSize: '0.9rem', color: '#cbd5e1' }}>
                 Protein: <span style={{ fontWeight: 600, color: '#10b981' }}>{selectedDayPlan?.total_protein || 0}g</span>
               </div>
+            </div>
             </div>
           </div>
 
@@ -1883,6 +1917,28 @@ const sidebarStyles = `
 
 .add-food-btn:disabled {
   opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.finish-all-btn {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+}
+
+.finish-all-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);
+}
+
+.finish-all-btn:disabled {
+  opacity: 0.6;
   cursor: not-allowed;
   transform: none;
 }

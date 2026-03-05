@@ -19,28 +19,6 @@ function Home() {
           overflow: hidden;
         }
 
-        .home-wrapper::before {
-          content: '';
-          position: absolute;
-          width: 500px;
-          height: 500px;
-          background: radial-gradient(circle, rgba(16, 185, 129, 0.15), transparent);
-          top: -200px;
-          right: -200px;
-          border-radius: 50%;
-        }
-
-        .home-wrapper::after {
-          content: '';
-          position: absolute;
-          width: 400px;
-          height: 400px;
-          background: radial-gradient(circle, rgba(99, 102, 241, 0.12), transparent);
-          bottom: -150px;
-          left: -150px;
-          border-radius: 50%;
-        }
-
         .container {
           max-width: 1400px;
           margin: 0 auto;

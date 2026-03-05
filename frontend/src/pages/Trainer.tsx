@@ -287,7 +287,6 @@ function Trainer() {
   const [stage, setStage]                         = useState<'UP'|'DOWN'|'NONE'>('NONE')
   const [feedback, setFeedback]                   = useState('Position yourself in view')
   const [sessionTime, setSessionTime]             = useState(0)
-  const [caloriesBurned, setCaloriesBurned]       = useState(0)
   const [formScore, setFormScore]                 = useState(100)
   const [, setPoseMatchScore]                     = useState(100)
   const [poseDetected, setPoseDetected]           = useState(false)
@@ -601,13 +600,6 @@ function Trainer() {
     const i = setInterval(() => setSessionTime(t => t + 1), 1000)
     return () => clearInterval(i)
   }, [])
-
-  useEffect(() => {
-    const calMap: Record<string, number> = { squat:0.32, push:0.29, plank:0.15, jump:0.4, burpee:0.5, lunge:0.25, curl:0.22, press:0.28, row:0.27, deadlift:0.35 }
-    let cpr = 0.2
-    for (const [k, v] of Object.entries(calMap)) { if (exerciseName.toLowerCase().includes(k)) { cpr = v; break } }
-    setCaloriesBurned(Math.round(reps * cpr * 10) / 10)
-  }, [reps, exerciseName])
 
   useEffect(() => {
     if (!isResting) return
@@ -1232,8 +1224,6 @@ function Trainer() {
   const totalPlannedReps = currentPlanItem
     ? (() => { const s = parseSetCount(currentPlanItem.sets), r = parseRepCount(currentPlanItem.reps); return s && r ? s * r : parseTarget(getPlanRepetitions(currentPlanItem)) })()
     : parseTarget(targetReps || defaultTargetText)
-  const plannedCal    = Number(currentPlanItem?.calories_burned)
-  const displayCal    = Number.isFinite(plannedCal) && plannedCal > 0 ? plannedCal : caloriesBurned
   const last7Available = last7DayForm.filter(d => d.avgForm !== null)
   const last7Avg = last7Available.length > 0
     ? Math.round(last7Available.reduce((a, b) => a + (b.avgForm ?? 0), 0) / last7Available.length)
@@ -1260,7 +1250,7 @@ function Trainer() {
         .main-workspace { display:flex; flex-direction:row; align-items:flex-start; gap:16px; max-width:1300px; width:100%; }
 
         /* LEFT: reference panel */
-        .reference-panel { width:240px; min-width:220px; flex-shrink:0; background:#1e293b; border:1px solid #334155; border-radius:18px; padding:14px; display:flex; flex-direction:column; gap:10px; }
+        .reference-panel { width:260px; min-width:240px; flex-shrink:0; background:#1e293b; border:1px solid #334155; border-radius:18px; padding:14px; display:flex; flex-direction:column; gap:10px; }
         .reference-media,.reference-video { width:100%; border-radius:10px; background:#0f172a; aspect-ratio:1/1; object-fit:cover; }
         .gif-info h4 { margin:0; font-size:.95rem; color:#f8fafc; font-weight:700; }
         .gif-info p { margin:4px 0 0; font-size:.8rem; color:#94a3b8; }
@@ -1495,7 +1485,6 @@ function Trainer() {
 
           <div className="metrics-panel">
             <div className="metric-item"><span className="metric-label">Time</span><span className="metric-value">{formatTime(sessionTime)}</span></div>
-            <div className="metric-item"><span className="metric-label">Calories</span><span className="metric-value">{displayCal}</span></div>
             <div className="metric-item"><span className="metric-label">Target</span><span className="metric-value">{cfg?.ii ? `${targetDurationSec}s` : workoutTargetText}</span></div>
             <div className="metric-item"><span className="metric-label">Total</span><span className="metric-value">{totalPlannedReps ?? ''}</span></div>
           </div>

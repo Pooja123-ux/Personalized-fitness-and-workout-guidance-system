@@ -614,7 +614,18 @@ export default function Dashboard() {
     ? adherence7.map((d: any) => String(d.date))
     : getRecentDates(7);
   const todayIso = toLocalIsoDate(new Date());
+  const todayDayName = new Date().toLocaleDateString('en-US', { weekday: 'long' });
   const todayLabel = new Date(`${todayIso}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const todayPlannedMealsCount = (() => {
+    if (!weeklyPlanMeals || typeof weeklyPlanMeals !== 'object') return 0;
+    const dayPlan = weeklyPlanMeals?.[todayDayName];
+    if (!dayPlan || typeof dayPlan !== 'object') return 0;
+    const mealTypes = ['breakfast', 'lunch', 'snacks', 'dinner'];
+    return mealTypes.reduce((sum, mealType) => {
+      const meals = Array.isArray(dayPlan?.[mealType]) ? dayPlan[mealType] : [];
+      return sum + meals.length;
+    }, 0);
+  })();
   const workoutCompletedToday = Boolean(todayAdherence?.workout_completed || false);
   const currentWorkoutBurned = Number(todayAdherence?.workout_calories_burned || 0);
 
@@ -1162,7 +1173,9 @@ export default function Dashboard() {
 
     const completedItems = Number(todayAdherence?.completed_items_count || 0);
     const totalItems = Number(todayAdherence?.total_items_count || 0);
-    const plannedMealsCount = todayFoods.reduce((sum, item) => sum + Number(item.item_count || 0), 0);
+    const plannedMealsCount = todayPlannedMealsCount > 0
+      ? todayPlannedMealsCount
+      : todayFoods.reduce((sum, item) => sum + Number(item.item_count || 0), 0);
     
     // Show food reminder if there are planned meals and not all are completed
     if (plannedMealsCount > 0 && completedItems < plannedMealsCount) {
