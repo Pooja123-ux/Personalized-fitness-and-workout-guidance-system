@@ -114,23 +114,10 @@ function Chatbot() {
     });
 
     const payload = res?.data || {};
-    const filteredSources = Array.isArray(payload.sources) 
-      ? payload.sources.filter((s: string) => {
-          const source = String(s || '').toLowerCase();
-          return source !== 'rule_based' 
-            && source !== 'general' 
-            && !source.includes('walk')
-            && !source.includes('step');
-        })
-      : [];
     
     addAssistantMessage(payload.answer || 'No answer returned.', {
       category: payload.category,
       confidence: payload.confidence,
-      sources: filteredSources.length > 0 ? filteredSources : undefined,
-      followUpQuestions: Array.isArray(payload.follow_up_questions)
-        ? payload.follow_up_questions.slice(0, 3)
-        : []
     });
   };
 
@@ -189,7 +176,7 @@ function Chatbot() {
             <span className="dot" />
             <div>
               <strong>Fitness Assistant</strong>
-              <p>General + dataset-backed answers</p>
+              <p>Powered by Google Gemini LLM</p>
             </div>
           </div>
           <span className="status-pill">{loading ? 'Thinking...' : 'Online'}</span>

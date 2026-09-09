@@ -45,6 +45,13 @@ app.include_router(weekly_workout_plan.router, prefix="/workout-plan")
 app.include_router(adherence.router, prefix="/adherence")
 app.include_router(faq.router, prefix="/faq")
 
+# AI Trainer is optional because it requires heavy CV deps (e.g., mediapipe).
+try:
+    from app.routers import ai_trainer_router
+    app.include_router(ai_trainer_router.router)
+except ModuleNotFoundError as e:
+    print(f"AI Trainer router disabled (missing dependency): {e}")
+
 # Serve local exercise GIF assets from backend/app/gifs
 GIF_DIR = Path(__file__).resolve().parent / "gifs"
 if GIF_DIR.exists():
